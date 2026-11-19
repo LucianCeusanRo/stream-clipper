@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stream Clipper – vertical clips with word-by-word captions from livestreams</title>
+<meta name="description" content="Free, open-source Windows app that turns long livestreams into 9:16 clips with word-by-word captions. Whisper transcription (Romanian by default), local review before posting.">
+<meta property="og:title" content="Stream Clipper">
+<meta property="og:description" content="Long livestreams in, short vertical clips with word-by-word captions out. Free and open source (MIT).">
+<meta property="og:image" content="https://lucianceusanro.github.io/stream-clipper/screenshots/dashboard.png">
+<link rel="icon" href="icon.png">
+<style>
+:root{--bg:#0d0d12;--card:#16161e;--line:#262633;--txt:#e9e9f1;--mut:#a0a0b4;--acc:#ff2e55;--cy:#00e5ff}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--cy)}.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+nav{display:flex;align-items:center;gap:14px;padding:18px 0}nav img{width:36px;height:36px}nav b{font-size:18px}
+nav .sp{flex:1}nav a{color:var(--mut);text-decoration:none;font-size:14px}nav a:hover{color:var(--txt)}
+.hero{padding:48px 0 28px;text-align:center}
+.hero h1{font-size:clamp(32px,5vw,54px);line-height:1.1;margin:0 0 16px;letter-spacing:-.02em}
+.hero h1 span{color:var(--acc)}
+.hero p{color:var(--mut);max-width:680px;margin:0 auto 26px;font-size:18px}
+.btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-block;padding:12px 20px;border-radius:10px;font-weight:600;text-decoration:none;border:1px solid var(--line);color:var(--txt);background:var(--card)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}.btn:hover{filter:brightness(1.1)}
+.note{font-size:13px;color:var(--mut);margin-top:14px}
+.shot{margin:34px 0;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 20px 60px #0008}
+.shot img{display:block;width:100%;height:auto}
+h2{font-size:28px;margin:56px 0 14px;letter-spacing:-.01em}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+.card h3{margin:0 0 6px;font-size:17px}.card p{margin:0;color:var(--mut);font-size:15px}
+.steps{counter-reset:s;list-style:none;padding:0;margin:0}
+.steps li{counter-increment:s;position:relative;padding:10px 0 10px 48px;border-bottom:1px solid var(--line)}
+.steps li:before{content:counter(s);position:absolute;left:0;top:10px;width:32px;height:32px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;display:grid;place-items:center}
+.two{display:grid;grid-template-columns:1.2fr 1fr;gap:22px;align-items:center}
+@media(max-width:800px){.two{grid-template-columns:1fr}}
+.respect{background:linear-gradient(135deg,#2a1020,#141420);border:1px solid #4a1e33;border-radius:14px;padding:22px 24px}
+.respect ul{margin:8px 0 0;padding-left:20px}
+code{background:#20202b;padding:2px 6px;border-radius:6px;font-size:14px}
+pre{background:#111118;border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;font-size:14px;color:#cfd3ff}
+.debate{text-align:center;padding:30px;border:1px dashed var(--acc);border-radius:14px;margin-top:56px}
+footer{color:var(--mut);font-size:13px;padding:40px 0;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav><img src="icon.png" alt=""><b>Stream Clipper</b><span class="sp"></span>
+<a href="#how">How it works</a><a href="#install">Install</a><a href="#respect">Respect creators</a>
+<a href="https://github.com/LucianCeusanRo/stream-clipper">GitHub</a></nav>
+
+<section class="hero">
+<h1>Long livestream in.<br><span>Short vertical clips</span> out.</h1>
+<p>A free Windows app that records a stream, transcribes it with Whisper, finds the loud and funny moments and renders 9:16 clips with word-by-word captions. You review every clip before anything is posted.</p>
+<div class="btns">
+<a class="btn pri" href="https://github.com/LucianCeusanRo/stream-clipper/archive/refs/heads/main.zip">⬇ Download (ZIP)</a>
+<a class="btn" href="https://github.com/LucianCeusanRo/stream-clipper">View on GitHub</a>
+<a class="btn" href="DISCUSSION_URL">💬 Join the debate</a>
+</div>
+<div class="note">Open source (MIT) · Windows 10/11 · Romanian speech by default · Unofficial fan tool, not affiliated with Rockstar Games or Take-Two.</div>
+</section>
+
+<div class="shot"><img src="screenshots/dashboard.png" alt="Stream Clipper dashboard with three generated clips" loading="lazy"></div>
+
+<h2 id="how">How it works</h2>
+<div class="grid">
+<div class="card"><h3>1 · Record</h3><p>Watches a YouTube channel and records the live from the start (DVR), or takes any link yt-dlp supports or a local video file.</p></div>
+<div class="card"><h3>2 · Transcribe</h3><p>faster-whisper <code>large-v3</code> with word timestamps, language forced to Romanian (configurable).</p></div>
+<div class="card"><h3>3 · Find moments</h3><p>Volume spikes, screams and laughter, keywords, chat activity. Optional LLM judge (OpenAI-compatible API or local Ollama).</p></div>
+<div class="card"><h3>4 · Render</h3><p>ffmpeg, 1080×1920: webcam on top + game below (face detection), big word-by-word captions, hook, emoji, −14 LUFS audio.</p></div>
+<div class="card"><h3>5 · Review</h3><p>Local dashboard: watch, edit the text, re-cut ±1 s. Auto-post is off by default.</p></div>
+</div>
+
+<div class="two" style="margin-top:34px">
+<div class="shot" style="margin:0"><img src="screenshots/clip_frames_small.png" alt="Three frames from a rendered clip: hook text, captions with the current word highlighted, emoji" loading="lazy"></div>
+<div><h3 style="margin-top:0">What a clip looks like</h3>
+<p style="color:var(--mut)">These frames come from the built-in demo: a test video generated with ffmpeg (Game of Life as "gameplay", a labelled box as "webcam") and a scripted transcript. No real stream footage is used in the repo or on this page.</p>
+<p style="color:var(--mut)">Try it yourself without a stream or GPU: <code>python tools/demo.py</code></p></div>
+</div>
+
+<h2 id="respect">Respect creators</h2>
+<div class="respect">
+<p style="margin:0">Clips are someone else's work. This tool is meant for a streamer's own editors, fan pages with permission, and official clipping campaigns.</p>
+<ul>
+<li>Clip only creators who allow it or run a clipping campaign (<code>required_hashtag</code> is there for campaign tags).</li>
+<li>Always credit the creator (<code>credit_text</code> burns e.g. "@channel on YouTube" into every clip).</li>
+<li>Follow YouTube, Twitch, Kick and TikTok rules, and take a clip down if the creator asks.</li>
+</ul>
+</div>
+
+<h2 id="install">Install</h2>
+<div class="two">
+<ol class="steps">
+<li>Download the ZIP and unzip it to a simple folder like <code>C:\StreamClipper</code>.</li>
+<li>Double-click <code>setup.bat</code>. It installs Python, ffmpeg, the packages and the Whisper model (15–20 min the first time) and creates a desktop shortcut.</li>
+<li>Open <b>Stream Clipper</b>, go to <b>Setări</b> (settings): channel, streamer name, credit, hashtags.</li>
+<li>Press <b>Start urmărire</b> to watch the channel, or paste a link and press <b>Generează clipuri</b>.</li>
+</ol>
+<div class="shot" style="margin:0"><img src="screenshots/settings.png" alt="Settings: channel, streamer name, credit text, campaign hashtag" loading="lazy"></div>
+</div>
+<p style="color:var(--mut)"><b>Requirements:</b> Windows 10/11, an NVIDIA GPU with ~6 GB+ VRAM recommended for Whisper large-v3 (CPU works with smaller models, much slower), ~10 GB disk. The dashboard is in Romanian for now.</p>
+
+<h2>Honest notes</h2>
+<div class="grid">
+<div class="card"><h3>Beginner project</h3><p>I'm learning programming. This was built with AI-assisted coding, then tested and fixed by running it.</p></div>
+<div class="card"><h3>TikTok posting</h3><p>Uses the TikTok Studio website, not an official API, so it can break when TikTok changes the page.</p></div>
+<div class="card"><h3>Detection</h3><p>Rule-based. It finds loud moments well; "funny" is harder. Review clips before posting.</p></div>
+</div>
+
+<div class="debate">
+<h2 style="margin-top:0">Clipping streamers: free promotion or taking their work?</h2>
+<p style="color:var(--mut);max-width:640px;margin:0 auto 18px">GTA 6 streams are about to be clipped by thousands of accounts. I think clipping is fine with permission or a campaign, and with credit every time. Where do you stand?</p>
+<a class="btn pri" href="DISCUSSION_URL">Answer in the GitHub discussion</a>
+</div>
+
+<footer>Made by <a href="https://lucian-ceusan.vercel.app">Lucian-Ciprian Ceușan</a> · <a href="https://github.com/LucianCeusanRo/stream-clipper/blob/main/LICENSE">MIT license</a> · Unofficial fan tool, not affiliated with Rockstar Games or Take-Two.</footer>
+</div>
+</body>
+</html>

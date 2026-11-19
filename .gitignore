@@ -1,0 +1,18 @@
+# your own settings and secrets: never commit
+config.yaml
+.env
+*.env
+!.env.example
+cookies*.txt
+# runtime state: recordings, clips, logs, TikTok browser session, state.db
+data/
+bin/
+.venv/
+models/*.part
+# build output
+*.exe
+*.pdb
+*.zip
+__pycache__/
+*.pyc
+.pytest_cache/

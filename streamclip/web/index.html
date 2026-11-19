@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ro"><head><meta charset="utf-8"><title>Stream Clipper</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="/static/icon.png">
+<style>
+:root{--bg:#0d0f14;--card:#161a22;--line:#252b36;--txt:#e9edf3;--mut:#8b95a7;--acc:#ff2d55;--ok:#22c55e;--warn:#f59e0b;--blue:#3b82f6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 "Segoe UI",system-ui,sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5;flex-wrap:wrap}
+h1{font-size:19px;margin:0;letter-spacing:.3px}h1 b{color:var(--acc)}
+.pill{padding:4px 10px;border-radius:99px;background:var(--card);border:1px solid var(--line);color:var(--mut);font-size:12.5px}
+.pill.on{color:#fff;border-color:var(--ok)}.pill.live{color:#fff;background:#b91c1c;border-color:#b91c1c}
+button{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit}
+button:hover{border-color:#3a4252}button.pri{background:var(--acc);border-color:var(--acc);font-weight:600}
+button.ok{background:var(--ok);border-color:var(--ok);color:#03150a;font-weight:600}button.ghost{background:none}
+.sp{flex:1}main{padding:16px 20px;max-width:1500px;margin:auto}
+.tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}.tabs button.act{border-color:var(--acc);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.thumb{position:relative;aspect-ratio:9/16;background:#000;cursor:pointer}.thumb img,.thumb video{width:100%;height:100%;object-fit:cover;display:block}
+.badge{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.7);padding:2px 8px;border-radius:6px;font-size:12px}
+.vir{display:flex;align-items:center;gap:8px;font-size:13px;cursor:help}.vir .bar{flex:1;height:7px;background:#2a2a33;border-radius:4px;overflow:hidden}.vir .bar i{display:block;height:100%;background:linear-gradient(90deg,#ff9f1a,#fe2c55)}
+.badge.v{background:#fe2c55;color:#fff;font-weight:700;cursor:help}.row2{display:flex;gap:6px}.row2 button{flex:1;white-space:nowrap}
+.rc{display:none;background:#14141a;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;gap:6px;flex-direction:column}.rc.open{display:flex}
+.rc .ln{display:flex;align-items:center;gap:6px}.rc .ln b{min-width:54px}.rc .ln span{min-width:48px;text-align:center}.rc button{padding:4px 9px}
+.gen input[type=text]#g_src{font-size:16px;padding:12px}.gopt{align-items:flex-end;margin-top:8px;flex-wrap:wrap}.gopt label{display:flex;flex-direction:column;font-size:12px;gap:3px;margin:0}
+.gopt input{width:120px}.big{font-size:17px;padding:11px 22px}.job{margin-top:8px;font-size:13px}.job .pb{height:9px;background:#2a2a33;border-radius:5px;overflow:hidden;margin-top:4px}
+.job .pb i{display:block;height:100%;background:linear-gradient(90deg,#25f4ee,#fe2c55);transition:width .5s}.job.err .pb i{background:#a33}
+.vd summary{list-style:none}.vd summary::-webkit-details-marker{display:none}.fl{font-size:11.5px;color:#bbb;display:flex;flex-direction:column;gap:3px;margin-top:5px}
+.fl div{display:grid;grid-template-columns:1fr 70px 34px;gap:6px;align-items:center}.fl .bar{height:5px;background:#2a2a33;border-radius:3px;overflow:hidden}.fl .bar i{display:block;height:100%;background:#25f4ee}
+.badge.r{left:auto;right:8px}.body{padding:10px;display:flex;flex-direction:column;gap:7px}
+.why{color:var(--mut);font-size:12px}textarea{width:100%;background:#0f1218;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px;font:inherit;resize:vertical;min-height:54px}
+.row{display:flex;gap:6px}.row button{flex:1;white-space:nowrap;padding:7px 6px}.row button:last-child:not(:first-child){flex:0 0 auto}
+.err{background:#2a1215;border:1px solid #7f1d1d;color:#fecaca;border-radius:10px;padding:8px 12px;margin-bottom:12px}
+.err div{margin:2px 0}.muted{color:var(--mut)}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.stat{display:flex;gap:18px;flex-wrap:wrap}.stat div b{display:block;font-size:20px}
+label{display:block;margin:10px 0 4px;color:var(--mut)}input[type=text],input[type=number],select{background:#0f1218;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px;font:inherit;width:100%;max-width:520px}
+pre{background:#07090c;border:1px solid var(--line);border-radius:10px;padding:10px;max-height:65vh;overflow:auto;font:12px/1.4 Consolas,monospace;white-space:pre-wrap}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:10}
+.modal video{max-height:92vh;max-width:95vw;border-radius:10px}.st{font-size:12px;padding:2px 8px;border-radius:6px;background:#222}
+.st.failed{background:#7f1d1d}.st.queued{background:#1e3a8a}.st.posting{background:#92400e}.st.posted{background:#14532d}.st.unconfirmed{background:#713f12}
+a{color:#93c5fd}
+</style></head><body>
+<header>
+  <h1>🎬 <b>Stream</b> Clipper</h1>
+  <span id="live" class="pill">…</span><span id="watch" class="pill">…</span><span id="work" class="pill">…</span><span id="post" class="pill">…</span>
+  <span class="sp"></span>
+  <button id="bWatch" onclick="toggleWatch()">…</button>
+  <button id="bPause" onclick="togglePause()">…</button>
+  <button id="bAuto" onclick="toggleAuto()">…</button>
+  <button onclick="tiktokLogin()">🔑 Login TikTok</button>
+</header>
+<main>
+  <div class="box gen">
+    <h3 style="margin:0 0 8px">✂️ Generează clipuri din orice link</h3>
+    <input type="text" id="g_src" placeholder="Lipește un link (YouTube live/VOD, Kick, Twitch, TikTok live replay) sau calea unui fișier: C:\Videos\live.mp4">
+    <div class="row gopt"><label>De la <input type="text" id="g_start" placeholder="0:00:00"></label><label>Până la <input type="text" id="g_end" placeholder="(tot)"></label>
+    <label>Câte clipuri <input type="number" id="g_n" value="5" min="1" max="50"></label>
+    <button class="pri big" onclick="genClips()">✂️ Generează clipuri</button></div>
+    <div id="jobs"></div>
+  </div>
+  <div id="errs"></div>
+  <div class="box stat" id="stats"></div>
+  <div class="tabs">
+    <button data-t="all" class="act">🎞 Toate clipurile</button><button data-t="pending">🆕 Clipuri noi</button><button data-t="queue">⏳ Coadă postare</button>
+    <button data-t="posted">✅ Postate</button><button data-t="skipped">⏭ Sărite</button>
+    <button data-t="settings">⚙️ Setări</button><button data-t="log">📜 Log</button>
+  </div>
+  <div id="view"></div>
+</main>
+<div class="modal" id="modal" onclick="closeModal(event)"><video id="mv" controls autoplay playsinline></video></div>
+<script>
+let tab='all', S={}, timer=null;
+const $=s=>document.querySelector(s), esc=s=>(s??'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hm=t=>{t=Math.floor(t||0);return `${Math.floor(t/3600)}:${String(Math.floor(t%3600/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`};
+const when=t=>t?new Date(t*1000).toLocaleString('ro-RO',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}):'';
+async function api(p,b){const r=await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{});
+  const j=await r.json().catch(()=>({error:'raspuns invalid'}));if(!r.ok||j.error){toast('Eroare: '+(j.error||r.status));throw j}return j}
+function toast(m){const e=document.createElement('div');e.className='err';e.textContent=m;$('#errs').prepend(e);setTimeout(()=>e.remove(),6000)}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('act',x===b));render()});
+async function state(){try{S=await api('/api/state')}catch(e){$('#live').textContent='⚠ aplicația nu răspunde';return}
+  const L=S.lives||[];$('#live').className='pill'+(L.length?' live':'');
+  $('#live').innerHTML=L.length?L.map(l=>`🔴 LIVE: <a href="${l.url}" target="_blank" style="color:#fff">${esc((l.title||l.id).slice(0,48))}</a>`).join(' · '):'⚫ canalul nu e live';
+  $('#watch').textContent='👁 '+(S.status.watcher||'');$('#work').textContent='⚙ '+(S.status.worker||'');$('#post').textContent='📤 '+(S.status.poster||'');
+  $('#bWatch').textContent=S.watching?'⏹ Stop urmărire':'▶ Start urmărire';$('#bWatch').className=S.watching?'':'ok';
+  $('#bPause').textContent=S.post_paused?'▶ Reia postarea':'⏸ Pauză postare';
+  $('#bAuto').textContent='🤖 Auto-postare: '+(S.auto_post?'ON':'OFF');$('#bAuto').className=S.auto_post?'pri':'';
+  const c=S.clips||{};$('#stats').innerHTML=`<div><b>${c.pending||0}</b>clipuri noi</div><div><b>${(c.queued||0)+(c.posting||0)}</b>în coadă</div><div><b>${S.posted_today}/${S.daily_cap}</b>postate azi</div><div><b>${(c.posted||0)+(c.unconfirmed||0)}</b>postate total</div><div><b>${(S.chunks||{}).queued||0}</b>bucăți de procesat</div><div><b>${c.failed||0}</b>eșuate</div>`;
+  $('#errs').querySelectorAll('.perr').forEach(e=>e.remove());
+  if((S.errors||[]).length){const d=document.createElement('div');d.className='err perr';d.innerHTML='<b>Probleme recente</b> <button class="ghost" onclick="api(\'/api/control\',{action:\'clear_errors\'})">ascunde</button>'+S.errors.slice(0,6).map(e=>`<div>${when(e.t)} – ${esc(e.msg)}</div>`).join('');$('#errs').append(d)}}
+async function render(){const v=$('#view');
+  if(tab==='settings')return settings(v);if(tab==='log')return logv(v);
+  const list=await api('/api/clips?status='+tab);
+  if(!list.length){v.innerHTML=`<p class="muted">${{all:'Niciun clip încă. Programul taie automat când canalul urmărit e live (sau generează clipuri dintr-un link, sus).',pending:'Niciun clip nou încă. Programul taie automat când canalul urmărit e live.',queue:'Coada e goală. Apasă „Postează” pe un clip.',posted:'Nimic postat încă.',skipped:'Nimic sărit.'}[tab]}</p>`;return}
+  v.innerHTML='<div class="grid">'+list.map(card).join('')+'</div>'}
+function allActs(c){const st=c.status;
+  if(st==='posted')return c.url?`<a href="${c.url}" target="_blank">Vezi pe TikTok ↗</a>`:'<span class="muted">postat – vezi TikTok Studio</span>';
+  if(st==='queued')return `<span class="muted">în coadă</span><button onclick="act(${c.id},'restore')">↩ Anulează</button>`;
+  if(st==='posting')return '<span class="muted">se postează…</span>';
+  if(st==='unconfirmed')return `<button onclick="if(confirm('Postarea anterioară nu a fost confirmată – verifică întâi TikTok Studio. Postez din nou?'))act(${c.id},'post')">📤 Postează iar</button><button onclick="del(${c.id})">🗑</button>`;
+  return `<button class="pri" onclick="act(${c.id},'post')">📤 Postează</button>${st!=='skipped'?`<button onclick="act(${c.id},'skip')">⏭ Sari</button>`:`<button onclick="act(${c.id},'restore')">↩ Readu</button>`}<button onclick="del(${c.id})">🗑</button>`}
+function card(c){const acts={all:allActs(c),pending:`<button class="pri" onclick="act(${c.id},'post')">📤 Postează</button><button onclick="act(${c.id},'skip')">⏭ Sari</button><button onclick="del(${c.id})">🗑</button>`,
+  queue:c.status==='failed'?`<button class="pri" onclick="act(${c.id},'post')">🔁 Reîncearcă</button><button onclick="act(${c.id},'restore')">↩ Înapoi</button>`:`<button onclick="act(${c.id},'restore')">↩ Anulează</button>`,
+  posted:c.url?`<a href="${c.url}" target="_blank">Vezi pe TikTok ↗</a>`:'<span class="muted">link indisponibil – vezi TikTok Studio</span>',
+  skipped:`<button onclick="act(${c.id},'restore')">↩ Readu</button><button onclick="del(${c.id})">🗑 Șterge</button>`}[tab];
+  return `<div class="card"><div class="thumb" onclick="play(${c.id})"><img loading="lazy" src="/media/${c.id}/thumb" onerror="this.style.display='none'">
+  <span class="badge v" title="${esc(c.viral_tip)}">🔥 ${c.viral}%</span><span class="badge r">${c.dur}s</span></div><div class="body">
+  <div><b>${esc(c.hook||'')}</b></div>
+  <details class="vd"><summary class="vir" title="${esc(c.viral_tip)}">🔥 Șansă viral: <b>${c.viral}%</b><span class="bar"><i style="width:${c.viral}%"></i></span>ⓘ</summary>
+  <div class="fl">${(c.factors_list||[]).map(([l,v])=>`<div>${esc(l)}<span class="bar"><i style="width:${v}%"></i></span>${v}%</div>`).join('')||'<div class="muted">estimare din scorul detectorului</div>'}</div></details>
+  <div class="why">${esc(c.why||'')} · live ${hm(c.start)} · ${esc(c.layout||'')}</div>
+  ${tab==='pending'||tab==='skipped'||(tab==='all'&&!['posted','posting'].includes(c.status))?`<textarea id="cap${c.id}" onchange="saveCap(${c.id})">${esc(c.caption)}</textarea>`:`<div>${esc(c.caption)}</div>`}
+  ${c.status&&tab!=='pending'&&!(tab==='all'&&c.status==='pending')?`<div><span class="st ${c.status}">${c.status}</span> ${esc(c.error||'')} ${when(c.posted_at)}</div>`:''}
+  ${editable(c)?`<div class="row2"><button onclick="retext(${c.id})" title="Titlu + descriere + hashtag-uri noi (altă variantă la fiecare apăsare). Hashtag-ul obligatoriu (dacă e setat) rămâne primul.">🔄 Refă textul</button>
+  <button onclick="toggleRc(${c.id})" ${c.can_recut?'':'disabled title="Sursa acestui clip nu mai există (clip vechi)"'} title="Mută începutul/sfârșitul și randează din nou">✂️ Refă clipul</button></div>
+  <div class="rc ${RC[c.id]?'open':''}" id="rc${c.id}">${rcPanel(c.id)}</div>`:''}
+  <div class="row">${acts}</div></div></div>`}
+const RC={};
+function editable(c){return !['posted','posting','deleted'].includes(c.status)}
+function rcPanel(id){const r=RC[id]||{ds:0,de:0,snap:true};const f=x=>(x>0?'+':'')+x+'s';
+  return `<div class="ln"><b>Început</b><button onclick="rcAdj(${id},'ds',-1)">−1s</button><span>${f(r.ds)}</span><button onclick="rcAdj(${id},'ds',1)">+1s</button></div>
+  <div class="ln"><b>Sfârșit</b><button onclick="rcAdj(${id},'de',-1)">−1s</button><span>${f(r.de)}</span><button onclick="rcAdj(${id},'de',1)">+1s</button></div>
+  <label style="margin:0"><input type="checkbox" ${r.snap?'checked':''} onchange="RC[${id}].snap=this.checked"> lipește de început/sfârșit de propoziție sau pauză</label>
+  <div class="ln"><button class="pri" onclick="recut(${id})">✂️ Aplică și randează</button><button onclick="toggleRc(${id})">Închide</button></div>`}
+function toggleRc(id){if(RC[id])delete RC[id];else RC[id]={ds:0,de:0,snap:true};const e=$('#rc'+id);e.classList.toggle('open',!!RC[id]);e.innerHTML=rcPanel(id)}
+function rcAdj(id,k,d){RC[id][k]+=d;$('#rc'+id).innerHTML=rcPanel(id)}
+async function retext(id){const r=await api('/api/clip',{id,action:'retext'});const t=$('#cap'+id);if(t)t.value=r.caption;toast('Text nou ✔ '+r.caption)}
+async function recut(id){const r=RC[id];const e=$('#rc'+id);e.innerHTML='<span class="muted">⏳ randez din nou… (câteva secunde)</span>';
+  try{const j=await api('/api/clip',{id,action:'recut',dstart:r.ds,dend:r.de,snap:r.snap});delete RC[id];toast('Clip refăcut ✔ '+j.dur+'s');render()}
+  catch(x){e.innerHTML=rcPanel(id)}}
+async function act(id,action){const t=$('#cap'+id);await api('/api/clip',{id,action,caption:t?t.value:undefined});render();state()}
+async function saveCap(id){await api('/api/clip',{id,action:'caption',caption:$('#cap'+id).value})}
+async function del(id){if(confirm('Ștergi definitiv clipul? (momentul nu va mai fi tăiat din nou)'))act(id,'delete')}
+function play(id){$('#mv').src='/media/'+id+'/video';$('#modal').style.display='flex'}
+function closeModal(e){if(e.target.id==='modal'){$('#mv').pause();$('#modal').style.display='none'}}
+async function toggleWatch(){await api('/api/control',{action:S.watching?'stop':'start'});state()}
+async function togglePause(){await api('/api/control',{action:S.post_paused?'resume_post':'pause_post'});state()}
+async function toggleAuto(){if(!S.auto_post&&!confirm('Auto-postare ON: programul postează singur cele mai bune clipuri, la intervalul setat. Continui?'))return;await api('/api/control',{action:S.auto_post?'auto_off':'auto_on'});state()}
+async function tiktokLogin(){await api('/api/tiktok_login',{});toast('Se deschide Chrome: loghează-te pe TikTok. Se salvează automat.')}
+async function settings(v){const s=await api('/api/settings');
+  v.innerHTML=`<div class="box"><h3>Setări</h3>
+  <p class="muted">Clipuiește doar creatori care permit asta sau au campanii de clipping, și dă-le mereu credit.</p>
+  <label>Canal urmărit (YouTube, gol = fără urmărire automată)</label><input type="text" id="s_channel_url" placeholder="https://www.youtube.com/@canal" value="${esc(s.channel_url||'')}">
+  <label>Numele streamerului (apare în titluri/hook-uri) / jocul</label><div class="row" style="max-width:520px"><input type="text" id="s_streamer_name" value="${esc(s.streamer_name||'')}"><input type="text" id="s_game" value="${esc(s.game||'')}"></div>
+  <label>Text credit pe clip (ex: @canal pe YouTube)</label><input type="text" id="s_credit_text" value="${esc(s.credit_text||'')}">
+  <label>Hashtag obligatoriu (ex: cerut de o campanie de clipping; gol = niciunul) – mereu PRIMUL</label><input type="text" id="s_required_hashtag" value="${esc(s.required_hashtag||'')}">
+  <label>Hashtag-uri puse mereu</label><input type="text" id="s_hashtags" value="${esc((s.hashtags||[]).join(' '))}">
+  <label>Hashtag-uri populare din care se aleg aleator (pentru varietate)</label><input type="text" id="s_extra_hashtags" value="${esc((s.extra_hashtags||[]).join(' '))}">
+  <label>Număr maxim de hashtag-uri pe clip (inclusiv cel obligatoriu)</label><input type="number" id="s_hashtags_max" min="1" max="10" value="${s.hashtags_max??5}">
+  <label>Șablon descriere ({title} = titlul generat, {hashtags})</label><input type="text" id="s_caption_template" value="${esc(s.caption_template)}">
+  <label>Pauză între postări automate (minute): minim / maxim</label><div class="row" style="max-width:520px"><input type="number" id="s_post_interval_min_minutes" value="${s.post_interval_min_minutes}"><input type="number" id="s_post_interval_max_minutes" value="${s.post_interval_max_minutes}"></div>
+  <label>Pauză minimă între clipurile aprobate de tine (minute)</label><input type="number" id="s_manual_min_gap_minutes" value="${s.manual_min_gap_minutes??3}">
+  <label>Maxim postări pe zi</label><input type="number" id="s_daily_post_cap" value="${s.daily_post_cap}">
+  <label>Ore fără postări automate (ex: 3 4 5 6)</label><input type="text" id="s_quiet_hours" value="${esc((s.quiet_hours||[]).join(' '))}">
+  <label>Câte clipuri: prag scor (mai mic = mai multe) / maxim la 5 minute</label><div class="row" style="max-width:520px"><input type="number" step="0.1" id="s_min_score" value="${s.min_score}"><input type="number" id="s_clips_per_chunk_max" value="${s.clips_per_chunk_max}"></div>
+  <label>Layout</label><select id="s_layout">${['split','blur','fill'].map(x=>`<option ${x===s.layout?'selected':''}>${x}</option>`).join('')}</select>
+  <label>Font subtitrări (se aplică la clipurile noi)</label><select id="s_caption_font">${(s.fonts||[]).map(x=>`<option ${x===s.caption_font?'selected':''}>${x}</option>`).join('')}</select>
+  <label>Vizibilitate TikTok</label><select id="s_visibility">${['public','private'].map(x=>`<option ${x===s.visibility?'selected':''}>${x}</option>`).join('')}</select>
+  <label>Filtru titlu live (regex, gol = toate)</label><input type="text" id="s_live_title_filter" value="${esc(s.live_title_filter)}">
+  <label><input type="checkbox" id="s_censor_swears" ${s.censor_swears?'checked':''}> Ascunde înjurăturile în subtitrare (***)</label>
+  <h3>Efecte (clipurile noi)</h3>
+  ${[['emoji','Emoji-uri care apar lângă subtitrare (😂🤬😱🔥💀)'],['pop','Cuvântul spus „sare” (bounce)'],['keyword_color','Culoare pentru cuvintele cheie'],
+     ['zoom','Zoom „punch-in” pe țipete / momente tari'],['shake','Tremurat ușor când se enervează'],['boost','Volum mai tare pe momentele tari (cu limitator, fără distorsiuni)'],
+     ['sfx','Sunete meme pe vârfuri (boom; sunete proprii, fără copyright)'],['progress_bar','Bară de progres jos']]
+    .map(([k,t])=>`<label><input type="checkbox" id="fx_${k}" ${s.effects[k]?'checked':''}> ${t}</label>`).join('')}
+  <label>Volum sunete meme (0–1) / boost volum (dB)</label><div class="row" style="max-width:520px"><input type="number" step="0.05" min="0" max="1" id="fx_sfx_volume" value="${s.effects.sfx_volume}"><input type="number" step="0.5" min="0" max="12" id="fx_boost_db" value="${s.effects.boost_db}"></div>
+  <p><button class="pri" onclick="saveSettings()">💾 Salvează</button></p></div>
+  <div class="box"><h3>Adaugă manual un live / VOD</h3><input type="text" id="u" placeholder="https://www.youtube.com/watch?v=..."> <p><button onclick="addUrl()">➕ Procesează</button></p></div>`}
+async function saveSettings(){const g=id=>$('#s_'+id),b={};
+  for(const k of ['channel_url','streamer_name','game','credit_text','required_hashtag','hashtags','extra_hashtags','caption_template','quiet_hours','layout','visibility','live_title_filter','caption_font'])b[k]=g(k).value;
+  for(const k of ['post_interval_min_minutes','post_interval_max_minutes','daily_post_cap','min_score','clips_per_chunk_max','manual_min_gap_minutes','hashtags_max'])b[k]=+g(k).value;
+  b.censor_swears=g('censor_swears').checked;
+  b.effects={};for(const k of ['emoji','pop','keyword_color','zoom','shake','boost','sfx','progress_bar'])b.effects[k]=$('#fx_'+k).checked;
+  b.effects.sfx_volume=+$('#fx_sfx_volume').value;b.effects.boost_db=+$('#fx_boost_db').value;
+  if(b.post_interval_max_minutes<b.post_interval_min_minutes){toast('Maximul trebuie să fie ≥ minimul');return}
+  const r=await api('/api/settings',b);toast('Salvat ✔ Hashtag-uri: '+r.hashtags.join(' '))}
+async function genClips(){const b={source:$('#g_src').value,start:$('#g_start').value,end:$('#g_end').value,clips:+$('#g_n').value};
+  await api('/api/job',b);toast('Pornit ✔ Clipurile apar în galerie când sunt gata');$('#g_src').value='';jobsView()}
+async function jobsView(){const l=await api('/api/jobs').catch(()=>[]);const e=$('#jobs');if(!e)return;
+  e.innerHTML=l.slice(0,5).map(j=>`<div class="job ${j.status==='eroare'?'err':''}"><b>${esc(j.source.length>70?j.source.slice(0,70)+'…':j.source)}</b> · ${j.clips} clipuri ·
+  ${esc(j.error?('❌ '+j.error):j.stage)} ${j.status==='gata'?'· <a href="#" onclick="openAll();return false">vezi în galerie</a>':''}
+  <div class="pb"><i style="width:${j.progress}%"></i></div></div>`).join('');
+  if(l.some(j=>j.status==='ruleaza'||j.status==='in asteptare')&&tab==='all'&&!Object.keys(RC).length)render()}
+function openAll(){document.querySelector('.tabs button[data-t=all]').click()}
+async function addUrl(){await api('/api/url',{url:$('#u').value});toast('Adăugat ✔')}
+async function logv(v){const l=await api('/api/log?n=300');v.innerHTML='<pre id="lg">'+esc(l.join('\n'))+'</pre>';const p=$('#lg');p.scrollTop=p.scrollHeight}
+state();render();jobsView();setInterval(state,3000);setInterval(jobsView,3000);setInterval(()=>{if(tab!=='settings'&&!Object.keys(RC).length&&!document.activeElement.matches('textarea,input')&&$('#modal').style.display!=='flex')render()},15000);
+</script></body></html>
