@@ -899,7 +899,7 @@ class T18Security(unittest.TestCase):
         for bad in ("file:///etc/passwd", "--exec rm", "http://127.0.0.1:8777/x", "https://evil.com/watch?v=1", "javascript:alert(1)"):
             with self.assertRaises(ValueError):
                 util.check_url(bad)
-        self.assertTrue(util.check_url("https://www.youtube.com/watch?v=sigWeXgcJjI", youtube_only=True))
+        self.assertTrue(util.check_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ", youtube_only=True))
         self.assertTrue(util.check_url("https://kick.com/alex"))
         with self.assertRaises(ValueError):
             util.check_url("https://kick.com/alex", youtube_only=True)
