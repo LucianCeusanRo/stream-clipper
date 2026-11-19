@@ -34,6 +34,27 @@ La "corecturi" repară doar greșelile clare de transcriere (diacritice ș ț ă
 argou românesc). Nu schimba sensul. Lista poate fi goală."""
 
 
+# English prompts (used unless language: ro). JSON keys stay the same so the parser is shared.
+PROMPT_JUDGE_EN = """You edit a short-video page with the best moments from {name}'s streams ({game}).
+A good clip: a funny or intense moment, a strong reaction, understandable without context, a hook in the first second.
+
+You get the transcript of a candidate moment (with seconds) and the detected signals. Rate how well it would do
+as a short clip: jokes, rage, screams, unexpected reactions, banter with chat, giveaway hype, big game moments.
+Penalize: boring parts, silence, reading donations without a reaction, ads/sponsors, no payoff.
+
+Reply ONLY with JSON:
+{"scor": 0-10,
+ "categorie": "amuzant|rage|reactie|giveaway|gta|chat|plictisitor",
+ "start": recommended start second (so the hook lands in the first 1-2 seconds),
+ "end": end second (after the payoff, clip 20-60 s),
+ "hook": "short on-screen text, UPPERCASE, max 7 words, in the language of the transcript",
+ "titlu": "short catchy description in the language of the transcript, max 90 characters, 1-2 emoji, no hashtags",
+ "corecturi": [{"i": word_index, "w": "corrected word"}]}
+In "corecturi" fix only clear transcription mistakes (names: {name}, {game}). Don't change the meaning. Can be empty."""
+PROMPT_TITLE_EN = ("You write titles for short clips of the streamer {name} ({game}). Write ONE new title, short "
+                   "(max 70 characters), funny, in the language of the transcript, with 1 emoji, NO hashtags, different "
+                   "from the old title. Reply only JSON: {\"titlu\": \"...\"}")
+
 def _env():
     envf = ROOT / ".env"
     if envf.exists():
@@ -78,7 +99,7 @@ def judge(cand, words_rel):
             f"Durata ferestrei: {cand['end'] - cand['start']:.0f}s (secundele de mai jos sunt relative la început).\n\n"
             "Cuvinte:\n" + "\n".join(lines[:600]))
     try:
-        return chat(texts.fill(PROMPT_JUDGE), user)
+        return chat(texts.fill(PROMPT_JUDGE if texts.is_ro() else PROMPT_JUDGE_EN), user)
     except Exception as e:
         log.warning("LLM indisponibil (%s) -> continui fara", str(e)[:120])
         return None
@@ -92,7 +113,7 @@ PROMPT_TITLE = ("Ești editor de TikTok pentru clipurile streamerului {name} ({g
 def retitle(text, old_title):
     """New viral title for a clip (used by '🔄 Refă textul'). None if the LLM is down."""
     try:
-        j = chat(texts.fill(PROMPT_TITLE), f"Titlul vechi: {old_title}\nCe se spune în clip: {text[:1500]}", timeout=45)
+        j = chat(texts.fill(PROMPT_TITLE if texts.is_ro() else PROMPT_TITLE_EN), f"Titlul vechi: {old_title}\nCe se spune în clip: {text[:1500]}", timeout=45)
         t = " ".join(str(j.get("titlu", "")).replace("#", " ").split())
         return t[:90] if t and t != old_title else None
     except Exception as e:

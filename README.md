@@ -1,140 +1,248 @@
-<p align="center"><img src="assets/icon.png" width="96" alt="Stream Clipper icon"></p>
-
-<h1 align="center">Stream Clipper</h1>
-
-<p align="center">
-Turns long livestreams (GTA 6 streams were the reason I built it) into short vertical clips with word-by-word captions.<br>
-Windows desktop app · Romanian speech by default · runs on your own PC · free and open source (MIT)
-</p>
+<p align="center"><img src="assets/banner.png" alt="Stream Clipper: long livestreams in, short vertical clips out" width="100%"></p>
 
 <p align="center">
 <a href="https://github.com/LucianCeusanRo/stream-clipper/actions/workflows/ci.yml"><img src="https://github.com/LucianCeusanRo/stream-clipper/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
-<a href="https://lucianceusanro.github.io/stream-clipper/">Website</a> ·
-<a href="README.ro.md">Română</a> ·
-<a href="https://github.com/LucianCeusanRo/stream-clipper/discussions/1">💬 Debate: clipping streamers, free promotion or taking their work?</a>
+<a href="LICENSE"><img src="https://img.shields.io/github/license/LucianCeusanRo/stream-clipper" alt="MIT license"></a>
+<img src="https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
+<img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows 10/11">
+<a href="https://github.com/LucianCeusanRo/stream-clipper/releases"><img src="https://img.shields.io/github/v/release/LucianCeusanRo/stream-clipper" alt="Latest release"></a>
+<a href="https://github.com/LucianCeusanRo/stream-clipper/stargazers"><img src="https://img.shields.io/github/stars/LucianCeusanRo/stream-clipper?style=social" alt="GitHub stars"></a>
 </p>
 
-> **Unofficial fan tool, not affiliated with Rockstar Games or Take-Two.** No game footage, logos or trademarks are included in this repository.
+<p align="center">
+<b>Turns long livestreams into short vertical clips with word-by-word captions.</b><br>
+Any streamer, any language Whisper understands. Gaming, IRL, podcasts. GTA 6 streams are the reason I built it.<br>
+<a href="https://lucianceusanro.github.io/stream-clipper/">Website</a> ·
+<a href="#quick-start">Quick start</a> ·
+<a href="https://github.com/LucianCeusanRo/stream-clipper/releases/latest">Download</a> ·
+<a href="https://github.com/LucianCeusanRo/stream-clipper/discussions/1">💬 The debate: is clipping streamers free promotion or taking their work?</a> ·
+<a href="README.ro.md">Română</a>
+</p>
 
-![Dashboard with generated clips](docs/screenshots/dashboard.png)
+> [!NOTE]
+> **Unofficial fan tool, not affiliated with Rockstar Games or Take-Two.** No game footage, logos or trademarks are included in this repository. All images here come from a synthetic test video generated with ffmpeg.
+
+<p align="center"><img src="docs/screenshots/dashboard.png" alt="Dashboard with three generated clips" width="88%"></p>
+
+## Table of contents
+
+- [What it is](#what-it-is)
+- [Respect creators](#respect-creators)
+- [Features](#features)
+- [Demo](#demo)
+- [How it works](#how-it-works)
+- [Quick start](#quick-start)
+- [Usage](#usage)
+- [Configuration reference](#configuration-reference)
+- [Requirements](#requirements)
+- [FAQ](#faq)
+- [Limitations](#limitations)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [Credits and license](#credits-and-license)
 
 ## What it is
 
-A program that watches a YouTube channel (or takes any video link / file), records the stream, transcribes the speech with Whisper, looks for the loud, funny or intense moments, and renders them as 9:16 clips (20–60 s) with big captions that highlight each word as it is spoken. You review every clip in a local dashboard and decide what gets posted.
+Stream Clipper is a Windows desktop app that **watches a YouTube channel, records the live from the start, transcribes it with Whisper, finds the loud, funny or intense moments, and renders 9:16 clips (20–60 s)** with big captions that highlight each word as it's spoken. It also takes any link yt-dlp supports (YouTube, Twitch, Kick VODs…) or a video file from your PC.
 
-Who it is for: people who make clips **for creators who want them**: a streamer's own editor, a fan page that has permission, or someone taking part in an official clipping campaign.
+Everything runs on your own computer. You review every clip in a local dashboard and decide what gets posted.
 
-I'm a beginner learning programming. This was **built with AI-assisted coding**, then tested and fixed by running it. It works on my PC; it is not a polished commercial product. Issues and pull requests are welcome.
+**Who it's for:** people who make clips *for creators who want them*: a streamer's own editor, a fan page with permission, or someone in an official clipping campaign.
+
+**Honest background:** I'm a beginner learning programming. I built this with **AI-assisted coding**, then tested and fixed it by actually running it. It works on my PC; it's not a polished commercial product. Bug reports and pull requests are very welcome.
 
 ## Respect creators
 
 Clips are someone else's work. Please:
 
-- clip only creators who **allow it** or who run a **clipping campaign** (many streamers do, with rules and a required hashtag; that's what the `required_hashtag` setting is for);
-- always **credit the creator** (the `credit_text` setting burns e.g. "@channel on YouTube" into the clip);
-- follow the rules of YouTube, Twitch, Kick and TikTok, and take a clip down if the creator asks.
+- clip only creators who **allow it** or run a **clipping campaign** (many streamers do, with rules and a required hashtag: that's what `required_hashtag` is for);
+- always **credit the creator** (`credit_text` burns e.g. "@channel on YouTube" into every clip);
+- follow YouTube, Twitch, Kick and TikTok rules, and take a clip down if the creator asks.
 
-Auto-posting is **off** by default: nothing is posted until you press "Postează" (Post) on a clip.
+**Auto-posting is off by default.** Nothing is posted until you press **Post** on a clip.
+
+## Features
+
+- 🔴 **Live watching**: checks a channel every minute, records new lives *from the beginning* (DVR), fills gaps after disconnects, and keeps cutting clips while the stream runs.
+- 🔗 **Any link or file**: YouTube live/VOD, Twitch, Kick, TikTok live replays (anything yt-dlp supports) or a local `.mp4`, with an optional from/to range.
+- 🗣️ **Whisper transcription**: faster-whisper `large-v3` with word timestamps; set the language (`en`, `ro`, `es`, …) or `auto`. Extra clean-up for Romanian (diacritics).
+- 🎯 **Moment detection**: loudness spikes, screams, laughter rhythm, keywords in English and Romanian (plus your own `extra_keywords`), live chat activity. Optional LLM judge with any OpenAI-compatible API or a free local Ollama model.
+- 🧑‍💻 **Smart layout**: face detection finds the webcam: cam on top + game below; no webcam → whole frame over a blurred background.
+- 💬 **Captions that pop**: 1–3 word groups, the current word highlighted, keyword colours, a hook line in the first seconds, 6 bundled fonts.
+- ✨ **Effects** (each can be turned off): emoji pop-ups, punch-in zoom on peaks, light shake on rage, original sound effects, loudness normalised to −14 LUFS.
+- ✂️ **Review and edit**: viral-chance estimate with the reasons, editable title/description, "New text" button, re-cut ±1 s snapped to sentence edges.
+- 📤 **Optional TikTok posting**: through the TikTok Studio website with your own login, gaps between posts and a daily cap.
+- 💾 **Crash-safe**: state in SQLite, so after a restart or power cut nothing is cut or posted twice.
+- 🌍 **English or Romanian dashboard** (`ui_language`).
+
+## Demo
+
+<table>
+<tr>
+<td width="34%"><img src="docs/screenshots/demo.gif" alt="Animated clip: captions highlight each word, emoji pop in"></td>
+<td><img src="docs/screenshots/clip_frames.png" alt="Three frames from one clip: hook text, highlighted captions, emoji"></td>
+</tr>
+<tr>
+<td colspan="2" align="center"><sub>From the built-in demo: a test video generated with ffmpeg (Conway's Game of Life as "gameplay", a labelled box as "webcam", beeps as "screams") and a scripted transcript. Run it yourself with <code>python tools/demo.py</code>, no GPU or stream needed.</sub></td>
+</tr>
+</table>
 
 ## How it works
 
-```
- YouTube live / VOD / any link / local file
-          │  yt-dlp (live from the start, DVR, gap filling)
-          ▼
-   5-minute chunks ──► Whisper (faster-whisper, large-v3, language forced to "ro")
-                              │ word timestamps
-                              ▼
-   moment detection: loudness spikes, screams/laughter, keywords ("nu se poate", "doamne"...),
-   chat activity, optional LLM judge (any OpenAI-compatible API or local Ollama)
-                              │
-                              ▼
-   layout: face detection (OpenCV YuNet) → webcam on top + game below, or blurred background
-                              │
-                              ▼
-   ffmpeg render: 1080×1920, word-by-word ASS captions, hook text, emoji, zoom on peaks, −14 LUFS audio
-                              │
-                              ▼
-   local dashboard (127.0.0.1) → you review, edit text, re-cut ±1 s → optional TikTok upload
+```mermaid
+flowchart LR
+    A[YouTube live / VOD<br>any link · local file] -->|yt-dlp| B[5-minute chunks]
+    B --> C[Whisper<br>word timestamps]
+    C --> D[Moment detection<br>audio · keywords · chat · optional LLM]
+    D --> E[Layout<br>face detection]
+    E --> F[ffmpeg render<br>9:16 · captions · effects]
+    F --> G[Local dashboard<br>review · edit · re-cut]
+    G -->|you press Post| H[TikTok upload<br>optional]
 ```
 
-| | |
+## Quick start
+
+1. **Download** the [latest release](https://github.com/LucianCeusanRo/stream-clipper/releases/latest) (Source code ZIP) or `git clone` the repo, and unzip it to a simple folder such as `C:\StreamClipper`.
+2. **Double-click `setup.bat`.** It installs Python 3.12 (only if missing), ffmpeg, Deno, the Python packages, Chromium (for optional posting) and the Whisper model, runs the tests and creates a **Stream Clipper** desktop shortcut. 15–20 minutes the first time, no admin rights needed.
+3. **Open Stream Clipper**, go to **⚙️ Settings**, set the speech language, channel (optional), streamer name, credit text and hashtags, and press **Save**.
+
+<details>
+<summary><b>Run from source (Linux/macOS/Windows, for developers)</b></summary>
+
+```bash
+git clone https://github.com/LucianCeusanRo/stream-clipper.git && cd stream-clipper
+python -m venv .venv && . .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt                     # also needs ffmpeg on PATH
+cp config.example.yaml config.yaml
+python -m streamclip selftest --quick               # tests in a temp folder
+python -m streamclip run                            # dashboard at http://127.0.0.1:8777
+```
+The desktop window and the installer are Windows-only; the engine and dashboard also run on Linux (that's how CI tests it).
+</details>
+
+## Usage
+
+| I want to… | Do this |
 |---|---|
-| ![Settings](docs/screenshots/settings.png) | ![Frames from a clip rendered from the synthetic demo video](docs/screenshots/clip_frames_small.png) |
-| Settings: channel, streamer name, credit, campaign hashtag | Frames from a clip rendered from the synthetic demo: hook, word-by-word captions, emoji, credit |
+| Clip a channel while it's live | Settings → channel URL → **▶ Start watching** |
+| Clip a past stream / VOD | Paste the link at the top, optional From/To (e.g. `1:05:00`–`1:30:00`), number of clips → **✂️ Generate clips** |
+| Clip a video on my PC | Paste the path, e.g. `C:\Videos\stream.mp4` → **✂️ Generate clips** |
+| Fix a clip | **🔄 New text** for a new title/hashtags, **✂️ Re-cut** to move start/end by ±1 s |
+| Post | **📤 Post** (one at a time, with a gap) after **🔑 TikTok login** once |
+| Try it without a stream | `python tools/demo.py` → http://127.0.0.1:8833 |
 
-The clip frames above come from `tools/demo.py`: a test video generated with ffmpeg (Conway's Game of Life as "gameplay", a labelled box as "webcam", beeps as "screams") and a scripted transcript. No real stream footage is used anywhere in this repo.
+Clip files are saved in `data\clips\`. Your login session stays in `data\tiktok_profile` on your PC.
+
+<p align="center"><img src="docs/screenshots/settings.png" alt="Settings tab: language, channel, streamer name, credit, campaign hashtag" width="88%"></p>
+
+### Optional: LLM for better picks and titles
+
+Copy `.env.example` to `.env` and fill in **one** provider (OpenAI, xAI, Groq, OpenRouter) or point it at a local [Ollama](https://ollama.com) model for free. Without an LLM the app uses rules and title templates. Never commit your `.env`.
+
+## Configuration reference
+
+Everything is in `config.yaml` (created from [`config.example.yaml`](config.example.yaml), which documents every key). The most used ones are also in the Settings tab.
+
+| Key | Default | What it does |
+|---|---|---|
+| `language` | `en` | Whisper speech language (`en`, `ro`, `es`, `de`, … or `auto`) |
+| `ui_language` | `en` | Dashboard language: `en` or `ro` |
+| `channel_url` | empty | YouTube channel to watch; empty = only links/files you add |
+| `streamer_name` / `game` | empty / `GTA 6` | Used in hooks and titles (`game` can be any topic) |
+| `credit_text` | empty | Burned into every clip, e.g. `@channel on YouTube` |
+| `required_hashtag` | empty | Campaign hashtag, always first when set |
+| `hashtags` / `extra_hashtags` / `hashtags_max` | `#gta6` / popular tags / 5 | Fixed + randomly picked hashtags |
+| `extra_keywords` | `[]` | Your own words that mark a good moment |
+| `whisper_model` | `large-v3` | `medium` / `small` for weaker PCs or CPU |
+| `clip_min_sec` / `clip_max_sec` | 20 / 60 | Clip length range |
+| `min_score` / `clips_per_chunk_max` | 0.9 / 3 | Lower threshold = more clips |
+| `layout` | `split` | `split` (cam + game), `blur`, `fill` |
+| `auto_post` | `false` | `true` posts the best clips by itself (only for creators who allow it) |
+| `daily_post_cap` / post intervals | 30 / 30–45 min | Posting pace |
+| `live_title_filter` | empty | Regex: only clip lives whose title matches |
 
 ## Requirements
 
-- **Windows 10/11** for the desktop app and installer (the core also runs on Linux; that's how CI tests it).
-- **NVIDIA GPU with ~6 GB+ VRAM** recommended for Whisper `large-v3` (I use an RTX 4060 Ti). Without a GPU it falls back to CPU: use `whisper_model: "small"` or `"medium"`, and expect it to be much slower than real time.
-- ~10 GB free disk (Whisper model ~3 GB, recordings, clips).
-- Internet for YouTube. Python, ffmpeg and Deno are installed by `setup.bat` into the program folder (no admin needed).
+- **Windows 10/11** for the desktop app and installer.
+- **NVIDIA GPU with ~6 GB+ VRAM** recommended for `large-v3` (I use an RTX 4060 Ti). Without a GPU it runs on the CPU: use `small` or `medium`, and expect it to be much slower than real time.
+- **~10 GB free disk** (Whisper model ~3 GB, recordings, clips) and internet for downloads.
 
-## Install (Windows)
+## FAQ
 
-1. Download the code: **Code → Download ZIP** (or `git clone`), and unzip it into a simple folder such as `C:\StreamClipper`.
-2. Double-click **`setup.bat`**. It installs Python 3.12 (only if you don't have it), ffmpeg, Deno, the Python packages, Chromium (for optional posting) and the Whisper model, runs the tests and creates a **"Stream Clipper"** desktop shortcut. Takes 15–20 minutes the first time.
-3. It also creates **`config.yaml`** from `config.example.yaml`. Your `config.yaml`, `.env` and `data/` folder stay on your PC and are ignored by git.
+<details><summary><b>Is it legal to clip streamers?</b></summary>
+It depends on the creator and the platform. Many streamers welcome clips or run paid clipping campaigns; others don't. This tool doesn't decide that for you. Clip only creators who allow it, credit them, and remove a clip if asked. This is not legal advice.
+</details>
 
-## Use
+<details><summary><b>Does it work for languages other than English and Romanian?</b></summary>
+Transcription and audio-based detection (screams, laughter, volume spikes, chat) work for any language Whisper supports. The built-in keyword list and title templates are English and Romanian; for other languages add your words in <code>extra_keywords</code>, or use an LLM, which writes titles in the language of the transcript.
+</details>
 
-1. Open **Stream Clipper** from the desktop.
-2. **⚙️ Setări** (Settings; the dashboard is in Romanian for now): set the channel URL (or leave it empty), the streamer's name, the game, the credit text, and hashtags. Save.
-3. Two ways to get clips:
-   - **Watch a channel**: press **Start urmărire** (start watching). When the channel goes live it records from the beginning of the stream and keeps cutting clips while the stream runs.
-   - **Generate from a link or file**: paste a YouTube/Twitch/Kick link (anything yt-dlp supports) or a path like `C:\Videos\stream.mp4`, optionally a from/to time and how many clips, then **✂️ Generează clipuri** (generate clips).
-4. In **🆕 Clipuri noi** (new clips), watch each clip, edit the title/description, use **🔄 Refă textul** (new text) or **✂️ Refă clipul** (re-cut ±1 s, snapped to sentence edges), then **📤 Postează** (post), **⏭ Sari** (skip) or **🗑** (delete). Clip files are in `data\clips\`.
-5. Optional TikTok posting: press **🔑 Login TikTok** once and log in in the Chrome window that opens. The session is stored locally in `data\tiktok_profile` (never in the repo). Posting drives the TikTok Studio website like a person clicking; there is a gap between posts and a daily limit.
+<details><summary><b>Does it only work for GTA 6?</b></summary>
+No. GTA 6 is just the default <code>game</code> value. Set it to any game or topic ("Just Chatting", "the podcast"). For IRL or podcasts without a fixed webcam, the <code>blur</code> or <code>fill</code> layout usually looks better.
+</details>
 
-Try it without a stream or GPU: `python tools/demo.py` builds the synthetic test video, renders clips from it and opens the dashboard at http://127.0.0.1:8833.
+<details><summary><b>Can I use it without a GPU?</b></summary>
+Yes, with <code>whisper_model: small</code> or <code>medium</code>. It's slower, so it's better for VODs than for keeping up with a live stream.
+</details>
 
-### Optional: LLM for better moment picking and titles
+<details><summary><b>Does it upload my videos anywhere?</b></summary>
+No. Everything is processed on your PC. Only if you configure an LLM is the transcript text of a candidate moment sent to that provider (or kept local with Ollama). Posting happens only when you press Post.
+</details>
 
-Copy `.env.example` to `.env` and fill in **one** provider (OpenAI, xAI, Groq, OpenRouter) or point it at a local [Ollama](https://ollama.com) model for free. Without an LLM it works on rules and title templates. Never commit your `.env`.
+<details><summary><b>How is it different from OpenShorts, AI-Youtube-Shorts-Generator or OpusClip?</b></summary>
+Those are bigger, more mature projects (or paid services) focused on podcasts and uploaded videos. Stream Clipper is small and focused on one job: watching a live channel and catching moments while the stream is still running, on a Windows gaming PC. If you need more features, they are great options.
+</details>
 
-## Main settings (`config.yaml` or the Settings tab)
+<details><summary><b>YouTube says "Sign in to confirm you're not a bot".</b></summary>
+Set <code>youtube_cookies_from_browser: "firefox"</code> (or <code>edge</code>/<code>chrome</code>, the browser you're logged into YouTube with; Chrome must be closed). Never share or commit cookie files.
+</details>
 
-| setting | default | what it does |
-|---|---|---|
-| `channel_url` | empty | YouTube channel to watch; empty = only manual links/files |
-| `streamer_name`, `game` | empty, `GTA 6` | used in hooks and titles |
-| `credit_text` | empty | text burned into every clip, e.g. `@channel on YouTube` |
-| `required_hashtag` | empty | campaign hashtag, always placed first when set |
-| `hashtags` / `extra_hashtags` / `hashtags_max` | `#gta6` / a few popular ones / 5 | fixed + randomly picked hashtags |
-| `auto_post` | `false` | `false` = you press Postează on each clip |
-| `daily_post_cap`, post intervals | 30, 30–45 min | posting pace |
-| `whisper_model` | `large-v3` | `small`/`medium` for weaker PCs |
-| `language` | `ro` | Whisper language; the moment keywords and title templates are Romanian |
-| `layout` | `split` | `split` (cam + game), `blur`, `fill` |
+## Limitations
 
-## Limitations (honest)
+- **TikTok posting uses the website**, not an official API. When TikTok changes its upload page, posting breaks until the selectors are updated. It was tested on a test page, not at scale on real TikTok.
+- How much of a live can be fetched from the start (DVR) depends on YouTube.
+- Detection is rule-based. It finds loud moments well; "funny" is harder. Review clips before posting.
+- Whisper still makes mistakes with noise, music, or people talking over each other.
+- Some status and error messages and the log are still in Romanian.
+- Face detection is simple (a face that stays in one place). Unusual layouts may need a manual `cam_box`.
 
-- TikTok posting uses the website, not an official API. When TikTok changes its upload page, posting breaks until the selectors are updated. It was tested against a test page, not at scale on real TikTok.
-- How much of a live stream can be fetched from the start (DVR) depends on YouTube.
-- Moment detection is rule-based (volume, keywords, chat). It finds loud moments well; "funny" is harder. Review clips before posting.
-- Whisper still makes mistakes with noise, music, or two people talking at once.
-- Keywords, title templates and the dashboard are in Romanian. English UI is not done yet.
-- The face/webcam detection is simple: a face that stays in the same place. Unusual stream layouts may need a manual `cam_box`.
+## Roadmap
 
-## For developers
+Planned, not promised:
 
-```bash
-pip install -r requirements.txt
-python -m streamclip selftest --quick   # unit + render tests in a temp folder (needs ffmpeg)
-python -m streamclip run                # dashboard at http://127.0.0.1:8777 without the desktop window
-```
+- [ ] Translate the remaining Romanian log and error messages
+- [ ] YouTube Shorts and Instagram Reels export presets
+- [ ] Face tracking that follows the speaker for IRL and podcasts
+- [ ] Twitch / Kick *live* watching (VODs already work)
+- [ ] More caption styles and a caption style preview
+- [ ] Prebuilt Windows launcher in the releases
 
-Code map: `app.py` (24/7 orchestration), `youtube.py` (live/DVR/VOD/chat), `recorder.py`, `transcribe.py`, `detect.py`, `viral.py`, `llm.py`, `layout.py` + `facecam.py`, `render.py` + `effects.py`, `jobs.py` (manual links), `tiktok.py`, `web.py` + `web/index.html`, `db.py` (SQLite state, so nothing is cut or posted twice after a restart).
+Have an idea? Open a [feature request](https://github.com/LucianCeusanRo/stream-clipper/issues/new/choose) or a [discussion](https://github.com/LucianCeusanRo/stream-clipper/discussions).
 
-CI (GitHub Actions) runs the tests on Ubuntu with ffmpeg; the Whisper/GPU parts are not exercised in CI.
+## Contributing
 
-## Credits
+Contributions of any size are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup and rules (short version: run `python -m streamclip selftest --quick`, never commit `config.yaml`, `.env`, `data/` or real footage). Please follow the [Code of Conduct](CODE_OF_CONDUCT.md). Security issues: see [SECURITY.md](SECURITY.md).
 
-Libraries, fonts, emoji and the ideas I learned from are listed in [THIRD_PARTY.md](THIRD_PARTY.md).
+<details>
+<summary><b>Code map</b></summary>
 
-## License
+| File | Role |
+|---|---|
+| `streamclip/app.py` | 24/7 orchestration: watcher, worker, poster |
+| `streamclip/youtube.py`, `recorder.py` | live / DVR / VOD / chat download |
+| `streamclip/transcribe.py` | faster-whisper + Romanian clean-up |
+| `streamclip/detect.py`, `viral.py`, `llm.py` | moment detection, viral estimate, optional LLM |
+| `streamclip/layout.py`, `facecam.py` | webcam detection and layout choice |
+| `streamclip/render.py`, `effects.py` | ffmpeg render, ASS captions, effects |
+| `streamclip/jobs.py` | "Generate clips" from links/files |
+| `streamclip/tiktok.py` | optional upload through the website |
+| `streamclip/web.py`, `web/` | local dashboard (127.0.0.1 only) |
+| `streamclip/db.py` | SQLite state |
+| `tools/demo.py` | synthetic demo used for the screenshots |
+</details>
 
-[MIT](LICENSE) © 2026 Lucian-Ciprian Ceușan
+## Credits and license
+
+Libraries, fonts, emoji and the projects I learned from are listed in [THIRD_PARTY.md](THIRD_PARTY.md).
+
+[MIT](LICENSE) © 2026 Lucian-Ciprian Ceușan. Unofficial fan tool, not affiliated with Rockstar Games or Take-Two.

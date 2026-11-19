@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ro"><head><meta charset="utf-8"><title>Stream Clipper</title>
+<html lang="en"><head><meta charset="utf-8"><title>Stream Clipper</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="/static/icon.png">
 <style>
@@ -48,23 +48,23 @@ a{color:#93c5fd}
   <button id="bWatch" onclick="toggleWatch()">…</button>
   <button id="bPause" onclick="togglePause()">…</button>
   <button id="bAuto" onclick="toggleAuto()">…</button>
-  <button onclick="tiktokLogin()">🔑 Login TikTok</button>
+  <button onclick="tiktokLogin()">🔑 TikTok login</button>
 </header>
 <main>
   <div class="box gen">
-    <h3 style="margin:0 0 8px">✂️ Generează clipuri din orice link</h3>
-    <input type="text" id="g_src" placeholder="Lipește un link (YouTube live/VOD, Kick, Twitch, TikTok live replay) sau calea unui fișier: C:\Videos\live.mp4">
-    <div class="row gopt"><label>De la <input type="text" id="g_start" placeholder="0:00:00"></label><label>Până la <input type="text" id="g_end" placeholder="(tot)"></label>
-    <label>Câte clipuri <input type="number" id="g_n" value="5" min="1" max="50"></label>
-    <button class="pri big" onclick="genClips()">✂️ Generează clipuri</button></div>
+    <h3 style="margin:0 0 8px">✂️ Generate clips from any link</h3>
+    <input type="text" id="g_src" placeholder="Paste a link (YouTube live/VOD, Twitch, Kick, TikTok live replay) or a file path: C:\Videos\stream.mp4">
+    <div class="row gopt"><label>From <input type="text" id="g_start" placeholder="0:00:00"></label><label>To <input type="text" id="g_end" placeholder="(all)"></label>
+    <label>Clips <input type="number" id="g_n" value="5" min="1" max="50"></label>
+    <button class="pri big" onclick="genClips()">✂️ Generate clips</button></div>
     <div id="jobs"></div>
   </div>
   <div id="errs"></div>
   <div class="box stat" id="stats"></div>
   <div class="tabs">
-    <button data-t="all" class="act">🎞 Toate clipurile</button><button data-t="pending">🆕 Clipuri noi</button><button data-t="queue">⏳ Coadă postare</button>
-    <button data-t="posted">✅ Postate</button><button data-t="skipped">⏭ Sărite</button>
-    <button data-t="settings">⚙️ Setări</button><button data-t="log">📜 Log</button>
+    <button data-t="all" class="act">🎞 All clips</button><button data-t="pending">🆕 New clips</button><button data-t="queue">⏳ Post queue</button>
+    <button data-t="posted">✅ Posted</button><button data-t="skipped">⏭ Skipped</button>
+    <button data-t="settings">⚙️ Settings</button><button data-t="log">📜 Log</button>
   </div>
   <div id="view"></div>
 </main>
@@ -73,116 +73,118 @@ a{color:#93c5fd}
 let tab='all', S={}, timer=null;
 const $=s=>document.querySelector(s), esc=s=>(s??'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hm=t=>{t=Math.floor(t||0);return `${Math.floor(t/3600)}:${String(Math.floor(t%3600/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`};
-const when=t=>t?new Date(t*1000).toLocaleString('ro-RO',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}):'';
+const when=t=>t?new Date(t*1000).toLocaleString(undefined,{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}):'';
 async function api(p,b){const r=await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{});
-  const j=await r.json().catch(()=>({error:'raspuns invalid'}));if(!r.ok||j.error){toast('Eroare: '+(j.error||r.status));throw j}return j}
+  const j=await r.json().catch(()=>({error:'invalid response'}));if(!r.ok||j.error){toast('Error: '+(j.error||r.status));throw j}return j}
 function toast(m){const e=document.createElement('div');e.className='err';e.textContent=m;$('#errs').prepend(e);setTimeout(()=>e.remove(),6000)}
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('act',x===b));render()});
-async function state(){try{S=await api('/api/state')}catch(e){$('#live').textContent='⚠ aplicația nu răspunde';return}
+async function state(){try{S=await api('/api/state')}catch(e){$('#live').textContent='⚠ app not responding';return}
   const L=S.lives||[];$('#live').className='pill'+(L.length?' live':'');
-  $('#live').innerHTML=L.length?L.map(l=>`🔴 LIVE: <a href="${l.url}" target="_blank" style="color:#fff">${esc((l.title||l.id).slice(0,48))}</a>`).join(' · '):'⚫ canalul nu e live';
+  $('#live').innerHTML=L.length?L.map(l=>`🔴 LIVE: <a href="${l.url}" target="_blank" style="color:#fff">${esc((l.title||l.id).slice(0,48))}</a>`).join(' · '):'⚫ channel not live';
   $('#watch').textContent='👁 '+(S.status.watcher||'');$('#work').textContent='⚙ '+(S.status.worker||'');$('#post').textContent='📤 '+(S.status.poster||'');
-  $('#bWatch').textContent=S.watching?'⏹ Stop urmărire':'▶ Start urmărire';$('#bWatch').className=S.watching?'':'ok';
-  $('#bPause').textContent=S.post_paused?'▶ Reia postarea':'⏸ Pauză postare';
-  $('#bAuto').textContent='🤖 Auto-postare: '+(S.auto_post?'ON':'OFF');$('#bAuto').className=S.auto_post?'pri':'';
-  const c=S.clips||{};$('#stats').innerHTML=`<div><b>${c.pending||0}</b>clipuri noi</div><div><b>${(c.queued||0)+(c.posting||0)}</b>în coadă</div><div><b>${S.posted_today}/${S.daily_cap}</b>postate azi</div><div><b>${(c.posted||0)+(c.unconfirmed||0)}</b>postate total</div><div><b>${(S.chunks||{}).queued||0}</b>bucăți de procesat</div><div><b>${c.failed||0}</b>eșuate</div>`;
+  $('#bWatch').textContent=S.watching?'⏹ Stop watching':'▶ Start watching';$('#bWatch').className=S.watching?'':'ok';
+  $('#bPause').textContent=S.post_paused?'▶ Resume posting':'⏸ Pause posting';
+  $('#bAuto').textContent='🤖 Auto-post: '+(S.auto_post?'ON':'OFF');$('#bAuto').className=S.auto_post?'pri':'';
+  const c=S.clips||{};$('#stats').innerHTML=`<div><b>${c.pending||0}</b>new clips</div><div><b>${(c.queued||0)+(c.posting||0)}</b>in queue</div><div><b>${S.posted_today}/${S.daily_cap}</b>posted today</div><div><b>${(c.posted||0)+(c.unconfirmed||0)}</b>posted total</div><div><b>${(S.chunks||{}).queued||0}</b>chunks to process</div><div><b>${c.failed||0}</b>failed</div>`;
   $('#errs').querySelectorAll('.perr').forEach(e=>e.remove());
-  if((S.errors||[]).length){const d=document.createElement('div');d.className='err perr';d.innerHTML='<b>Probleme recente</b> <button class="ghost" onclick="api(\'/api/control\',{action:\'clear_errors\'})">ascunde</button>'+S.errors.slice(0,6).map(e=>`<div>${when(e.t)} – ${esc(e.msg)}</div>`).join('');$('#errs').append(d)}}
+  if((S.errors||[]).length){const d=document.createElement('div');d.className='err perr';d.innerHTML='<b>Recent problems</b> <button class="ghost" onclick="api(\'/api/control\',{action:\'clear_errors\'})">hide</button>'+S.errors.slice(0,6).map(e=>`<div>${when(e.t)} – ${esc(e.msg)}</div>`).join('');$('#errs').append(d)}}
 async function render(){const v=$('#view');
   if(tab==='settings')return settings(v);if(tab==='log')return logv(v);
   const list=await api('/api/clips?status='+tab);
-  if(!list.length){v.innerHTML=`<p class="muted">${{all:'Niciun clip încă. Programul taie automat când canalul urmărit e live (sau generează clipuri dintr-un link, sus).',pending:'Niciun clip nou încă. Programul taie automat când canalul urmărit e live.',queue:'Coada e goală. Apasă „Postează” pe un clip.',posted:'Nimic postat încă.',skipped:'Nimic sărit.'}[tab]}</p>`;return}
+  if(!list.length){v.innerHTML=`<p class="muted">${{all:'No clips yet. Clips are cut automatically while the watched channel is live (or generate clips from a link above).',pending:'No new clips yet. Clips are cut automatically while the watched channel is live.',queue:'The queue is empty. Press “Post” on a clip.',posted:'Nothing posted yet.',skipped:'Nothing skipped.'}[tab]}</p>`;return}
   v.innerHTML='<div class="grid">'+list.map(card).join('')+'</div>'}
 function allActs(c){const st=c.status;
-  if(st==='posted')return c.url?`<a href="${c.url}" target="_blank">Vezi pe TikTok ↗</a>`:'<span class="muted">postat – vezi TikTok Studio</span>';
-  if(st==='queued')return `<span class="muted">în coadă</span><button onclick="act(${c.id},'restore')">↩ Anulează</button>`;
-  if(st==='posting')return '<span class="muted">se postează…</span>';
-  if(st==='unconfirmed')return `<button onclick="if(confirm('Postarea anterioară nu a fost confirmată – verifică întâi TikTok Studio. Postez din nou?'))act(${c.id},'post')">📤 Postează iar</button><button onclick="del(${c.id})">🗑</button>`;
-  return `<button class="pri" onclick="act(${c.id},'post')">📤 Postează</button>${st!=='skipped'?`<button onclick="act(${c.id},'skip')">⏭ Sari</button>`:`<button onclick="act(${c.id},'restore')">↩ Readu</button>`}<button onclick="del(${c.id})">🗑</button>`}
-function card(c){const acts={all:allActs(c),pending:`<button class="pri" onclick="act(${c.id},'post')">📤 Postează</button><button onclick="act(${c.id},'skip')">⏭ Sari</button><button onclick="del(${c.id})">🗑</button>`,
-  queue:c.status==='failed'?`<button class="pri" onclick="act(${c.id},'post')">🔁 Reîncearcă</button><button onclick="act(${c.id},'restore')">↩ Înapoi</button>`:`<button onclick="act(${c.id},'restore')">↩ Anulează</button>`,
-  posted:c.url?`<a href="${c.url}" target="_blank">Vezi pe TikTok ↗</a>`:'<span class="muted">link indisponibil – vezi TikTok Studio</span>',
-  skipped:`<button onclick="act(${c.id},'restore')">↩ Readu</button><button onclick="del(${c.id})">🗑 Șterge</button>`}[tab];
+  if(st==='posted')return c.url?`<a href="${c.url}" target="_blank">View on TikTok ↗</a>`:'<span class="muted">posted – check TikTok Studio</span>';
+  if(st==='queued')return `<span class="muted">in queue</span><button onclick="act(${c.id},'restore')">↩ Cancel</button>`;
+  if(st==='posting')return '<span class="muted">posting…</span>';
+  if(st==='unconfirmed')return `<button onclick="if(confirm('The previous upload was not confirmed – check TikTok Studio first. Post again?'))act(${c.id},'post')">📤 Post again</button><button onclick="del(${c.id})">🗑</button>`;
+  return `<button class="pri" onclick="act(${c.id},'post')">📤 Post</button>${st!=='skipped'?`<button onclick="act(${c.id},'skip')">⏭ Skip</button>`:`<button onclick="act(${c.id},'restore')">↩ Restore</button>`}<button onclick="del(${c.id})">🗑</button>`}
+function card(c){const acts={all:allActs(c),pending:`<button class="pri" onclick="act(${c.id},'post')">📤 Post</button><button onclick="act(${c.id},'skip')">⏭ Skip</button><button onclick="del(${c.id})">🗑</button>`,
+  queue:c.status==='failed'?`<button class="pri" onclick="act(${c.id},'post')">🔁 Retry</button><button onclick="act(${c.id},'restore')">↩ Back</button>`:`<button onclick="act(${c.id},'restore')">↩ Cancel</button>`,
+  posted:c.url?`<a href="${c.url}" target="_blank">View on TikTok ↗</a>`:'<span class="muted">link unavailable – check TikTok Studio</span>',
+  skipped:`<button onclick="act(${c.id},'restore')">↩ Restore</button><button onclick="del(${c.id})">🗑 Delete</button>`}[tab];
   return `<div class="card"><div class="thumb" onclick="play(${c.id})"><img loading="lazy" src="/media/${c.id}/thumb" onerror="this.style.display='none'">
   <span class="badge v" title="${esc(c.viral_tip)}">🔥 ${c.viral}%</span><span class="badge r">${c.dur}s</span></div><div class="body">
   <div><b>${esc(c.hook||'')}</b></div>
-  <details class="vd"><summary class="vir" title="${esc(c.viral_tip)}">🔥 Șansă viral: <b>${c.viral}%</b><span class="bar"><i style="width:${c.viral}%"></i></span>ⓘ</summary>
-  <div class="fl">${(c.factors_list||[]).map(([l,v])=>`<div>${esc(l)}<span class="bar"><i style="width:${v}%"></i></span>${v}%</div>`).join('')||'<div class="muted">estimare din scorul detectorului</div>'}</div></details>
-  <div class="why">${esc(c.why||'')} · live ${hm(c.start)} · ${esc(c.layout||'')}</div>
+  <details class="vd"><summary class="vir" title="${esc(c.viral_tip)}">🔥 Viral chance: <b>${c.viral}%</b><span class="bar"><i style="width:${c.viral}%"></i></span>ⓘ</summary>
+  <div class="fl">${(c.factors_list||[]).map(([l,v])=>`<div>${esc(l)}<span class="bar"><i style="width:${v}%"></i></span>${v}%</div>`).join('')||'<div class="muted">estimated from the detector score</div>'}</div></details>
+  <div class="why">${esc(c.why||'')} · at ${hm(c.start)} · ${esc(c.layout||'')}</div>
   ${tab==='pending'||tab==='skipped'||(tab==='all'&&!['posted','posting'].includes(c.status))?`<textarea id="cap${c.id}" onchange="saveCap(${c.id})">${esc(c.caption)}</textarea>`:`<div>${esc(c.caption)}</div>`}
   ${c.status&&tab!=='pending'&&!(tab==='all'&&c.status==='pending')?`<div><span class="st ${c.status}">${c.status}</span> ${esc(c.error||'')} ${when(c.posted_at)}</div>`:''}
-  ${editable(c)?`<div class="row2"><button onclick="retext(${c.id})" title="Titlu + descriere + hashtag-uri noi (altă variantă la fiecare apăsare). Hashtag-ul obligatoriu (dacă e setat) rămâne primul.">🔄 Refă textul</button>
-  <button onclick="toggleRc(${c.id})" ${c.can_recut?'':'disabled title="Sursa acestui clip nu mai există (clip vechi)"'} title="Mută începutul/sfârșitul și randează din nou">✂️ Refă clipul</button></div>
+  ${editable(c)?`<div class="row2"><button onclick="retext(${c.id})" title="New title + description + hashtags (a different variant on every press). The required hashtag (if set) stays first.">🔄 New text</button>
+  <button onclick="toggleRc(${c.id})" ${c.can_recut?'':'disabled title="The source of this clip is gone (old clip)"'} title="Move the start/end and render again">✂️ Re-cut</button></div>
   <div class="rc ${RC[c.id]?'open':''}" id="rc${c.id}">${rcPanel(c.id)}</div>`:''}
   <div class="row">${acts}</div></div></div>`}
 const RC={};
 function editable(c){return !['posted','posting','deleted'].includes(c.status)}
 function rcPanel(id){const r=RC[id]||{ds:0,de:0,snap:true};const f=x=>(x>0?'+':'')+x+'s';
-  return `<div class="ln"><b>Început</b><button onclick="rcAdj(${id},'ds',-1)">−1s</button><span>${f(r.ds)}</span><button onclick="rcAdj(${id},'ds',1)">+1s</button></div>
-  <div class="ln"><b>Sfârșit</b><button onclick="rcAdj(${id},'de',-1)">−1s</button><span>${f(r.de)}</span><button onclick="rcAdj(${id},'de',1)">+1s</button></div>
-  <label style="margin:0"><input type="checkbox" ${r.snap?'checked':''} onchange="RC[${id}].snap=this.checked"> lipește de început/sfârșit de propoziție sau pauză</label>
-  <div class="ln"><button class="pri" onclick="recut(${id})">✂️ Aplică și randează</button><button onclick="toggleRc(${id})">Închide</button></div>`}
+  return `<div class="ln"><b>Start</b><button onclick="rcAdj(${id},'ds',-1)">−1s</button><span>${f(r.ds)}</span><button onclick="rcAdj(${id},'ds',1)">+1s</button></div>
+  <div class="ln"><b>End</b><button onclick="rcAdj(${id},'de',-1)">−1s</button><span>${f(r.de)}</span><button onclick="rcAdj(${id},'de',1)">+1s</button></div>
+  <label style="margin:0"><input type="checkbox" ${r.snap?'checked':''} onchange="RC[${id}].snap=this.checked"> snap to sentence start/end or a pause</label>
+  <div class="ln"><button class="pri" onclick="recut(${id})">✂️ Apply and render</button><button onclick="toggleRc(${id})">Close</button></div>`}
 function toggleRc(id){if(RC[id])delete RC[id];else RC[id]={ds:0,de:0,snap:true};const e=$('#rc'+id);e.classList.toggle('open',!!RC[id]);e.innerHTML=rcPanel(id)}
 function rcAdj(id,k,d){RC[id][k]+=d;$('#rc'+id).innerHTML=rcPanel(id)}
-async function retext(id){const r=await api('/api/clip',{id,action:'retext'});const t=$('#cap'+id);if(t)t.value=r.caption;toast('Text nou ✔ '+r.caption)}
-async function recut(id){const r=RC[id];const e=$('#rc'+id);e.innerHTML='<span class="muted">⏳ randez din nou… (câteva secunde)</span>';
-  try{const j=await api('/api/clip',{id,action:'recut',dstart:r.ds,dend:r.de,snap:r.snap});delete RC[id];toast('Clip refăcut ✔ '+j.dur+'s');render()}
+async function retext(id){const r=await api('/api/clip',{id,action:'retext'});const t=$('#cap'+id);if(t)t.value=r.caption;toast('New text ✔ '+r.caption)}
+async function recut(id){const r=RC[id];const e=$('#rc'+id);e.innerHTML='<span class="muted">⏳ rendering again… (a few seconds)</span>';
+  try{const j=await api('/api/clip',{id,action:'recut',dstart:r.ds,dend:r.de,snap:r.snap});delete RC[id];toast('Clip re-cut ✔ '+j.dur+'s');render()}
   catch(x){e.innerHTML=rcPanel(id)}}
 async function act(id,action){const t=$('#cap'+id);await api('/api/clip',{id,action,caption:t?t.value:undefined});render();state()}
 async function saveCap(id){await api('/api/clip',{id,action:'caption',caption:$('#cap'+id).value})}
-async function del(id){if(confirm('Ștergi definitiv clipul? (momentul nu va mai fi tăiat din nou)'))act(id,'delete')}
+async function del(id){if(confirm('Delete this clip for good? (this moment will not be cut again)'))act(id,'delete')}
 function play(id){$('#mv').src='/media/'+id+'/video';$('#modal').style.display='flex'}
 function closeModal(e){if(e.target.id==='modal'){$('#mv').pause();$('#modal').style.display='none'}}
 async function toggleWatch(){await api('/api/control',{action:S.watching?'stop':'start'});state()}
 async function togglePause(){await api('/api/control',{action:S.post_paused?'resume_post':'pause_post'});state()}
-async function toggleAuto(){if(!S.auto_post&&!confirm('Auto-postare ON: programul postează singur cele mai bune clipuri, la intervalul setat. Continui?'))return;await api('/api/control',{action:S.auto_post?'auto_off':'auto_on'});state()}
-async function tiktokLogin(){await api('/api/tiktok_login',{});toast('Se deschide Chrome: loghează-te pe TikTok. Se salvează automat.')}
+async function toggleAuto(){if(!S.auto_post&&!confirm('Auto-post ON: the app will post the best clips by itself at the set interval. Only use this for creators who allow it. Continue?'))return;await api('/api/control',{action:S.auto_post?'auto_off':'auto_on'});state()}
+async function tiktokLogin(){await api('/api/tiktok_login',{});toast('Chrome is opening: log in to TikTok. The session is saved automatically.')}
 async function settings(v){const s=await api('/api/settings');
-  v.innerHTML=`<div class="box"><h3>Setări</h3>
-  <p class="muted">Clipuiește doar creatori care permit asta sau au campanii de clipping, și dă-le mereu credit.</p>
-  <label>Canal urmărit (YouTube, gol = fără urmărire automată)</label><input type="text" id="s_channel_url" placeholder="https://www.youtube.com/@canal" value="${esc(s.channel_url||'')}">
-  <label>Numele streamerului (apare în titluri/hook-uri) / jocul</label><div class="row" style="max-width:520px"><input type="text" id="s_streamer_name" value="${esc(s.streamer_name||'')}"><input type="text" id="s_game" value="${esc(s.game||'')}"></div>
-  <label>Text credit pe clip (ex: @canal pe YouTube)</label><input type="text" id="s_credit_text" value="${esc(s.credit_text||'')}">
-  <label>Hashtag obligatoriu (ex: cerut de o campanie de clipping; gol = niciunul) – mereu PRIMUL</label><input type="text" id="s_required_hashtag" value="${esc(s.required_hashtag||'')}">
-  <label>Hashtag-uri puse mereu</label><input type="text" id="s_hashtags" value="${esc((s.hashtags||[]).join(' '))}">
-  <label>Hashtag-uri populare din care se aleg aleator (pentru varietate)</label><input type="text" id="s_extra_hashtags" value="${esc((s.extra_hashtags||[]).join(' '))}">
-  <label>Număr maxim de hashtag-uri pe clip (inclusiv cel obligatoriu)</label><input type="number" id="s_hashtags_max" min="1" max="10" value="${s.hashtags_max??5}">
-  <label>Șablon descriere ({title} = titlul generat, {hashtags})</label><input type="text" id="s_caption_template" value="${esc(s.caption_template)}">
-  <label>Pauză între postări automate (minute): minim / maxim</label><div class="row" style="max-width:520px"><input type="number" id="s_post_interval_min_minutes" value="${s.post_interval_min_minutes}"><input type="number" id="s_post_interval_max_minutes" value="${s.post_interval_max_minutes}"></div>
-  <label>Pauză minimă între clipurile aprobate de tine (minute)</label><input type="number" id="s_manual_min_gap_minutes" value="${s.manual_min_gap_minutes??3}">
-  <label>Maxim postări pe zi</label><input type="number" id="s_daily_post_cap" value="${s.daily_post_cap}">
-  <label>Ore fără postări automate (ex: 3 4 5 6)</label><input type="text" id="s_quiet_hours" value="${esc((s.quiet_hours||[]).join(' '))}">
-  <label>Câte clipuri: prag scor (mai mic = mai multe) / maxim la 5 minute</label><div class="row" style="max-width:520px"><input type="number" step="0.1" id="s_min_score" value="${s.min_score}"><input type="number" id="s_clips_per_chunk_max" value="${s.clips_per_chunk_max}"></div>
+  v.innerHTML=`<div class="box"><h3>Settings</h3>
+  <p class="muted">Clip only creators who allow it or run a clipping campaign, and always credit them.</p>
+  <label>Speech language (Whisper: en, ro, es, de, … or auto) / Interface language (reload after saving)</label><div class="row" style="max-width:520px"><input type="text" id="s_language" value="${esc(s.language||'auto')}"><select id="s_ui_language">${['en','ro'].map(x=>`<option ${x===(s.ui_language||'en')?'selected':''}>${x}</option>`).join('')}</select></div>
+  <label>Extra keywords that mark a good moment (space separated, e.g. clutch headshot)</label><input type="text" id="s_extra_keywords" value="${esc((s.extra_keywords||[]).join(' '))}">
+  <label>Watched channel (YouTube; empty = no automatic watching)</label><input type="text" id="s_channel_url" placeholder="https://www.youtube.com/@channel" value="${esc(s.channel_url||'')}">
+  <label>Streamer name (used in titles/hooks) / game or topic</label><div class="row" style="max-width:520px"><input type="text" id="s_streamer_name" value="${esc(s.streamer_name||'')}"><input type="text" id="s_game" value="${esc(s.game||'')}"></div>
+  <label>Credit text on every clip (e.g. @channel on YouTube)</label><input type="text" id="s_credit_text" value="${esc(s.credit_text||'')}">
+  <label>Required hashtag (e.g. asked for by a clipping campaign; empty = none) – always FIRST</label><input type="text" id="s_required_hashtag" value="${esc(s.required_hashtag||'')}">
+  <label>Hashtags always added</label><input type="text" id="s_hashtags" value="${esc((s.hashtags||[]).join(' '))}">
+  <label>Popular hashtags picked at random (for variety)</label><input type="text" id="s_extra_hashtags" value="${esc((s.extra_hashtags||[]).join(' '))}">
+  <label>Max hashtags per clip (including the required one)</label><input type="number" id="s_hashtags_max" min="1" max="10" value="${s.hashtags_max??5}">
+  <label>Description template ({title} = generated title, {hashtags})</label><input type="text" id="s_caption_template" value="${esc(s.caption_template)}">
+  <label>Gap between automatic posts (minutes): min / max</label><div class="row" style="max-width:520px"><input type="number" id="s_post_interval_min_minutes" value="${s.post_interval_min_minutes}"><input type="number" id="s_post_interval_max_minutes" value="${s.post_interval_max_minutes}"></div>
+  <label>Minimum gap between clips you approved (minutes)</label><input type="number" id="s_manual_min_gap_minutes" value="${s.manual_min_gap_minutes??3}">
+  <label>Max posts per day</label><input type="number" id="s_daily_post_cap" value="${s.daily_post_cap}">
+  <label>Hours without automatic posts (e.g. 3 4 5 6)</label><input type="text" id="s_quiet_hours" value="${esc((s.quiet_hours||[]).join(' '))}">
+  <label>How many clips: score threshold (lower = more) / max per 5 minutes</label><div class="row" style="max-width:520px"><input type="number" step="0.1" id="s_min_score" value="${s.min_score}"><input type="number" id="s_clips_per_chunk_max" value="${s.clips_per_chunk_max}"></div>
   <label>Layout</label><select id="s_layout">${['split','blur','fill'].map(x=>`<option ${x===s.layout?'selected':''}>${x}</option>`).join('')}</select>
-  <label>Font subtitrări (se aplică la clipurile noi)</label><select id="s_caption_font">${(s.fonts||[]).map(x=>`<option ${x===s.caption_font?'selected':''}>${x}</option>`).join('')}</select>
-  <label>Vizibilitate TikTok</label><select id="s_visibility">${['public','private'].map(x=>`<option ${x===s.visibility?'selected':''}>${x}</option>`).join('')}</select>
-  <label>Filtru titlu live (regex, gol = toate)</label><input type="text" id="s_live_title_filter" value="${esc(s.live_title_filter)}">
-  <label><input type="checkbox" id="s_censor_swears" ${s.censor_swears?'checked':''}> Ascunde înjurăturile în subtitrare (***)</label>
-  <h3>Efecte (clipurile noi)</h3>
-  ${[['emoji','Emoji-uri care apar lângă subtitrare (😂🤬😱🔥💀)'],['pop','Cuvântul spus „sare” (bounce)'],['keyword_color','Culoare pentru cuvintele cheie'],
-     ['zoom','Zoom „punch-in” pe țipete / momente tari'],['shake','Tremurat ușor când se enervează'],['boost','Volum mai tare pe momentele tari (cu limitator, fără distorsiuni)'],
-     ['sfx','Sunete meme pe vârfuri (boom; sunete proprii, fără copyright)'],['progress_bar','Bară de progres jos']]
+  <label>Caption font (applies to new clips)</label><select id="s_caption_font">${(s.fonts||[]).map(x=>`<option ${x===s.caption_font?'selected':''}>${x}</option>`).join('')}</select>
+  <label>TikTok visibility</label><select id="s_visibility">${['public','private'].map(x=>`<option ${x===s.visibility?'selected':''}>${x}</option>`).join('')}</select>
+  <label>Live title filter (regex, empty = all)</label><input type="text" id="s_live_title_filter" value="${esc(s.live_title_filter)}">
+  <label><input type="checkbox" id="s_censor_swears" ${s.censor_swears?'checked':''}> Hide swear words in captions (***)</label>
+  <h3>Effects (new clips)</h3>
+  ${[['emoji','Emoji next to the captions (😂🤬😱🔥💀)'],['pop','The spoken word bounces'],['keyword_color','Colour for keywords'],
+     ['zoom','Punch-in zoom on screams / big moments'],['shake','Light shake on rage'],['boost','Louder audio on big moments (with a limiter, no distortion)'],
+     ['sfx','Meme sounds on peaks (boom; own sounds, no copyright issues)'],['progress_bar','Progress bar at the bottom']]
     .map(([k,t])=>`<label><input type="checkbox" id="fx_${k}" ${s.effects[k]?'checked':''}> ${t}</label>`).join('')}
-  <label>Volum sunete meme (0–1) / boost volum (dB)</label><div class="row" style="max-width:520px"><input type="number" step="0.05" min="0" max="1" id="fx_sfx_volume" value="${s.effects.sfx_volume}"><input type="number" step="0.5" min="0" max="12" id="fx_boost_db" value="${s.effects.boost_db}"></div>
-  <p><button class="pri" onclick="saveSettings()">💾 Salvează</button></p></div>
-  <div class="box"><h3>Adaugă manual un live / VOD</h3><input type="text" id="u" placeholder="https://www.youtube.com/watch?v=..."> <p><button onclick="addUrl()">➕ Procesează</button></p></div>`}
+  <label>Meme sound volume (0–1) / volume boost (dB)</label><div class="row" style="max-width:520px"><input type="number" step="0.05" min="0" max="1" id="fx_sfx_volume" value="${s.effects.sfx_volume}"><input type="number" step="0.5" min="0" max="12" id="fx_boost_db" value="${s.effects.boost_db}"></div>
+  <p><button class="pri" onclick="saveSettings()">💾 Save</button></p></div>
+  <div class="box"><h3>Add a live / VOD manually</h3><input type="text" id="u" placeholder="https://www.youtube.com/watch?v=..."> <p><button onclick="addUrl()">➕ Process</button></p></div>`}
 async function saveSettings(){const g=id=>$('#s_'+id),b={};
-  for(const k of ['channel_url','streamer_name','game','credit_text','required_hashtag','hashtags','extra_hashtags','caption_template','quiet_hours','layout','visibility','live_title_filter','caption_font'])b[k]=g(k).value;
+  for(const k of ['language','ui_language','extra_keywords','channel_url','streamer_name','game','credit_text','required_hashtag','hashtags','extra_hashtags','caption_template','quiet_hours','layout','visibility','live_title_filter','caption_font'])b[k]=g(k).value;
   for(const k of ['post_interval_min_minutes','post_interval_max_minutes','daily_post_cap','min_score','clips_per_chunk_max','manual_min_gap_minutes','hashtags_max'])b[k]=+g(k).value;
   b.censor_swears=g('censor_swears').checked;
   b.effects={};for(const k of ['emoji','pop','keyword_color','zoom','shake','boost','sfx','progress_bar'])b.effects[k]=$('#fx_'+k).checked;
   b.effects.sfx_volume=+$('#fx_sfx_volume').value;b.effects.boost_db=+$('#fx_boost_db').value;
-  if(b.post_interval_max_minutes<b.post_interval_min_minutes){toast('Maximul trebuie să fie ≥ minimul');return}
-  const r=await api('/api/settings',b);toast('Salvat ✔ Hashtag-uri: '+r.hashtags.join(' '))}
+  if(b.post_interval_max_minutes<b.post_interval_min_minutes){toast('Max must be ≥ min');return}
+  const prevUi=document.documentElement.lang;const r=await api('/api/settings',b);if(b.ui_language!==prevUi){location.reload();return}toast('Saved ✔ Hashtags: '+r.hashtags.join(' '))}
 async function genClips(){const b={source:$('#g_src').value,start:$('#g_start').value,end:$('#g_end').value,clips:+$('#g_n').value};
-  await api('/api/job',b);toast('Pornit ✔ Clipurile apar în galerie când sunt gata');$('#g_src').value='';jobsView()}
+  await api('/api/job',b);toast('Started ✔ Clips show up in the gallery when ready');$('#g_src').value='';jobsView()}
 async function jobsView(){const l=await api('/api/jobs').catch(()=>[]);const e=$('#jobs');if(!e)return;
-  e.innerHTML=l.slice(0,5).map(j=>`<div class="job ${j.status==='eroare'?'err':''}"><b>${esc(j.source.length>70?j.source.slice(0,70)+'…':j.source)}</b> · ${j.clips} clipuri ·
-  ${esc(j.error?('❌ '+j.error):j.stage)} ${j.status==='gata'?'· <a href="#" onclick="openAll();return false">vezi în galerie</a>':''}
+  e.innerHTML=l.slice(0,5).map(j=>`<div class="job ${j.status==='eroare'?'err':''}"><b>${esc(j.source.length>70?j.source.slice(0,70)+'…':j.source)}</b> · ${j.clips} clips ·
+  ${esc(j.error?('❌ '+j.error):j.stage)} ${j.status==='gata'?'· <a href="#" onclick="openAll();return false">see in gallery</a>':''}
   <div class="pb"><i style="width:${j.progress}%"></i></div></div>`).join('');
   if(l.some(j=>j.status==='ruleaza'||j.status==='in asteptare')&&tab==='all'&&!Object.keys(RC).length)render()}
 function openAll(){document.querySelector('.tabs button[data-t=all]').click()}
-async function addUrl(){await api('/api/url',{url:$('#u').value});toast('Adăugat ✔')}
+async function addUrl(){await api('/api/url',{url:$('#u').value});toast('Added ✔')}
 async function logv(v){const l=await api('/api/log?n=300');v.innerHTML='<pre id="lg">'+esc(l.join('\n'))+'</pre>';const p=$('#lg');p.scrollTop=p.scrollHeight}
 state();render();jobsView();setInterval(state,3000);setInterval(jobsView,3000);setInterval(()=>{if(tab!=='settings'&&!Object.keys(RC).length&&!document.activeElement.matches('textarea,input')&&$('#modal').style.display!=='flex')render()},15000);
 </script></body></html>

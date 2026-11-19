@@ -1,4 +1,4 @@
-"""Hooks (on-screen, first 2 s) and TikTok titles in Romanian when no LLM is configured."""
+"""Hooks (on-screen, first 2 s) and titles used when no LLM is configured. English, or Romanian when language: ro."""
 import random, re
 from .detect import fold
 
@@ -38,11 +38,50 @@ def fill(t, c=None):
     if c is None:
         from .util import cfg
         c = cfg()
-    name = str(c.get("streamer_name") or "").strip() or "streamerul"
-    game = str(c.get("game") or "").strip() or "jocul"
+    ro = is_ro(c)
+    name = str(c.get("streamer_name") or "").strip() or ("streamerul" if ro else "the streamer")
+    game = str(c.get("game") or "").strip() or ("jocul" if ro else "the game")
     return (t.replace("{NAME}", name.upper()).replace("{GAME}", game.upper())
              .replace("{Name}", name[:1].upper() + name[1:]).replace("{name}", name).replace("{game}", game))
 
+
+
+HOOKS_EN = {
+    "ras_audio": ["{NAME} COULDN'T STOP LAUGHING 😂", "I HAVEN'T LAUGHED THIS HARD", "WHAT WAS THAT? 😂"],
+    "ras": ["{NAME} COULDN'T STOP LAUGHING 😂", "THIS ONE ENDED ME 💀", "WHAT WAS THAT? 😂"],
+    "injuratura": ["{NAME} LOST IT 🤬", "{GAME} RAGE MOMENT", "HE CAN'T TAKE IT ANYMORE 😤"],
+    "exclamatie": ["NO WAY THIS HAPPENED", "{NAME}'S REACTION 😱", "WAIT FOR THE END", "NOBODY SAW THIS COMING"],
+    "giveaway": ["GIVEAWAY ON STREAM 🎁", "WHO WINS THE PRIZE?"],
+    "actiune": ["BEST {GAME} MOMENT SO FAR", "{GAME} = PURE CHAOS", "{GAME} ON STREAM HITS DIFFERENT"],
+    "chat": ["CHAT WENT TOO FAR 😂", "{NAME} VS CHAT 😂", "WHAT CHAT SAID"],
+    "_": ["GOLDEN MOMENT FROM THE STREAM", "WAIT FOR IT 😂", "THIS HAD TO BE CLIPPED"],
+}
+TITLES_EN = {
+    "ras_audio": ["{Name} couldn't stop laughing 😂", "Funniest moment of the stream 😂", "That laugh is contagious 😂"],
+    "ras": ["{Name} couldn't stop laughing 😂", "I cried laughing at this 😭", "Funniest moment of the stream 😂",
+            "Replayed this 10 times 😭"],
+    "injuratura": ["{Name} lost all patience in {game} 🤬", "{game} rage on stream 😤", "When {game} doesn't listen 😤"],
+    "exclamatie": ["That reaction is a 10/10 😱", "Nobody expected this 😳", "{Name} was speechless 😂",
+                   "Watch till the end 😳"],
+    "giveaway": ["Giveaway on stream 🎁", "Who wins the prize? 🎮"],
+    "actiune": ["{game} on stream = pure chaos 🔥", "Best {game} moment so far 🔥", "{Name} broke {game} 😂"],
+    "chat": ["Chat destroyed {name} 😂", "{Name} vs chat, round 1 🥊", "Chat was right 😂"],
+    "_": ["Best moments from the stream 🔥", "This stream was history 🔥", "POV: you're in chat 😂"],
+}
+QUOTE_TITLES_EN = ["\u201c{q}\u201d 😭", "\u201c{q}\u201d – {Name} 😂", "{Name}: \u201c{q}\u201d 💀"]
+EXCLAIM_RO = r"(?i)(nu |ce |doamne|frate|bă|băi|hai|gata|stai|aoleu|mamă|vai)"
+EXCLAIM_EN = r"(?i)(no |what|oh my|bro|dude|wait|let's go|come on|why|stop)"
+
+
+def is_ro(c=None):
+    if c is None:
+        from .util import cfg
+        c = cfg()
+    return str(c.get("language") or "").lower() == "ro"
+
+
+def _pick(ro_table, en_table, c=None):
+    return ro_table if is_ro(c) else en_table
 
 PRIORITY = ["ras", "ras_audio", "giveaway", "injuratura", "chat", "exclamatie", "actiune"]
 
@@ -62,9 +101,9 @@ def quote_hook(words, peak_rel):
     loud = " ".join(w["w"] for w in near[:6]).strip(" ,.")
     if len(loud) < 8 or len(loud) > 40:
         return None
-    if not re.search(r"(?i)(nu |ce |doamne|frate|bă|băi|hai|gata|stai|aoleu|mamă|vai)", loud):
+    if not re.search(EXCLAIM_RO if is_ro() else EXCLAIM_EN, loud):
         return None
-    return f"„{loud.upper()}”"
+    return f"„{loud.upper()}”" if is_ro() else f"\u201c{loud.upper()}\u201d"
 
 
 def quote(words_rel, max_words=6):
@@ -73,17 +112,19 @@ def quote(words_rel, max_words=6):
     for sent in re.split(r"(?<=[.!?])\s+", txt):
         sent = sent.strip(" ,")
         n = len(sent.split())
-        if 2 <= n <= max_words and re.search(r"(?i)(nu se poate|doamne|frate|aoleu|mamă|vai|bă|băi|gata|ce-i asta|ce faci)", sent):
+        if 2 <= n <= max_words and re.search(r"(?i)(nu se poate|doamne|frate|aoleu|mamă|vai|bă|băi|gata|ce-i asta|ce faci|"
+                                              r"no way|oh my god|what the|let's go|come on|bro|dude)", sent):
             return sent.rstrip(".")
     return None
 
 
 def new_title(cat, words_rel=(), avoid=(), rnd=random):
     """A title different from the ones in `avoid` (used by '🔄 Refă textul')."""
-    pool = [fill(t) for t in list(TITLES.get(cat, TITLES["_"])) + TITLES["_"][:3]]
+    T = _pick(TITLES, TITLES_EN)
+    pool = [fill(t) for t in list(T.get(cat, T["_"])) + T["_"][:3]]
     q = quote(list(words_rel))
     if q:
-        pool += [fill(t).replace("{q}", q) for t in QUOTE_TITLES]
+        pool += [fill(t).replace("{q}", q) for t in _pick(QUOTE_TITLES, QUOTE_TITLES_EN)]
     fresh = [t for t in pool if t not in set(avoid)] or pool
     return rnd.choice(fresh)
 
@@ -135,5 +176,6 @@ def finalize_caption(text):
 
 def make(cand, words_rel, rnd=random):
     cat = category(cand.get("cats", []))
-    hook = quote_hook(words_rel, cand["peak"] - cand["start"]) or fill(rnd.choice(HOOKS[cat]))
-    return hook, fill(rnd.choice(TITLES[cat])), cat
+    hooks, titles = _pick(HOOKS, HOOKS_EN), _pick(TITLES, TITLES_EN)
+    hook = quote_hook(words_rel, cand["peak"] - cand["start"]) or fill(rnd.choice(hooks.get(cat, hooks["_"])))
+    return hook, fill(rnd.choice(titles.get(cat, titles["_"]))), cat

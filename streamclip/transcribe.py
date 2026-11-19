@@ -1,4 +1,5 @@
-"""Romanian speech-to-text with faster-whisper (language forced to 'ro', word timestamps).
+"""Speech-to-text with faster-whisper (word timestamps). Language from config.yaml (`language`: en, ro, es, ...
+or "auto"). The Romanian clean-up below (diacritics, clitics, Latin-only filter) only runs when language is "ro".
 
 Diacritics: Whisper sometimes writes the old cedilla forms (ş ţ) or "ã"; we normalise everything to the
 correct comma-below letters (ș ț) and ă, so the burned captions are proper Romanian.
@@ -13,7 +14,8 @@ _lock = threading.Lock()
 DIACRITICS = str.maketrans({"ş": "ș", "Ş": "Ș", "ţ": "ț", "Ţ": "Ț", "ã": "ă", "Ã": "Ă"})
 # typical Whisper hallucinations on silence / music in Romanian
 HALLU = re.compile(r"(?i)(subtitrar\w*|mulțumesc pentru vizionare|abonează-te|nu uitați să vă abonați|"
-                   r"traducerea|www\.|\.com|amara\.org)")
+                   r"traducerea|www\.|\.com|amara\.org|thanks? (you )?for watching|subtitles by|"
+                   r"please subscribe|like and subscribe)")
 
 
 def fix_ro(s):
@@ -66,25 +68,28 @@ def transcribe(wav_path):
 def _transcribe(wav_path):
     c = cfg()
     pcm = load_wav(wav_path)
+    lang = str(c.get("language") or "auto").strip().lower()
+    ro = lang == "ro"
+    keep = (lambda t: _NON_LATIN.sub("", fix_ro(t)).strip()) if ro else (lambda t: t.strip())
+    restore = restore_diacritics if ro else (lambda t: t)
     segs, _ = model().transcribe(
-        pcm, language=c.get("language", "ro"), task="transcribe", word_timestamps=True, beam_size=5,
+        pcm, language=None if lang == "auto" else lang, task="transcribe", word_timestamps=True, beam_size=5,
         vad_filter=True, vad_parameters={"min_silence_duration_ms": 400, "speech_pad_ms": 200},
         condition_on_previous_text=False, initial_prompt=c.get("initial_prompt") or None,
         no_speech_threshold=0.6, compression_ratio_threshold=2.4)
     words, sents = [], []
     for s in segs:
-        txt = _NON_LATIN.sub("", fix_ro(s.text.strip())).strip()
+        txt = keep(s.text)
         if not txt or HALLU.search(txt) or s.avg_logprob < -1.2:
             continue
-        txt = " ".join(restore_diacritics(x) for x in txt.split())
+        txt = " ".join(restore(x) for x in txt.split())
         sents.append({"s": round(s.start, 2), "e": round(s.end, 2), "t": txt})
         for w in (s.words or []):
-            t = clean_word(re.sub(r"(\w)\1{3,}", r"\1\1\1", fix_ro(w.word.strip())))
-            if t:
-                t = restore_diacritics(t)   # "Aaaaaaaaa" -> "Aaa"
-            if t and keep_word(t, w.probability):
+            raw = re.sub(r"(\w)\1{3,}", r"\1\1\1", w.word.strip())          # "Aaaaaaaaa" -> "Aaa"
+            t = restore(clean_word(fix_ro(raw))) if ro else (raw if re.search(r"\w", raw) else "")
+            if t and (keep_word(t, w.probability) if ro else w.probability >= 0.1):
                 words.append({"w": t, "s": round(w.start, 2), "e": round(w.end, 2), "p": round(w.probability, 2)})
-    return merge_clitics(words), dedupe_loops(sents)
+    return (merge_clitics(words) if ro else words), dedupe_loops(sents)
 
 
 # Whisper sometimes writes a whole segment without diacritics ("sa faca", "pana", "bai").  For such segments we

@@ -1,92 +1,95 @@
 # ============================================================
-#  STREAM CLIPPER - configurare (editeaza doar valorile)
-#  Copiaza fisierul ca config.yaml (setup.bat o face singur). config.yaml NU se urca pe GitHub.
+#  STREAM CLIPPER - settings (edit the values only)
+#  setup.bat copies this file to config.yaml. config.yaml stays on your PC (it is in .gitignore).
+#  Most of these can also be changed in the app: Settings tab.
 # ============================================================
 
-# --- SURSA ---------------------------------------------------
-# Canalul de YouTube urmarit (gol = fara urmarire automata; poti genera clipuri din orice link in aplicatie).
-# Clipuieste DOAR creatori care permit asta sau au o campanie de clipping. Da-le mereu credit.
-channel_url: ""
-streamer_name: ""                 # apare in titluri/hook-uri (gol = "streamerul")
-game: "GTA 6"                     # jocul, apare in titluri/hook-uri
-# Live-uri/VOD-uri extra de procesat la pornire (optional).
-extra_urls: []
-check_live_every_sec: 60          # cat de des verifica daca a pornit un live nou
-backfill_from_start: true         # proceseaza si ce s-a transmis deja din live (de la inceput)
-backfill_max_hours: 12            # cat de mult in urma (YouTube tine max ~12h DVR)
-process_recent_vods: 0            # cate VOD-uri recente (live-uri terminate) sa proceseze la pornire
-live_title_filter: ""             # regex, ex "(?i)gta" = doar live-urile cu "GTA" in titlu ("" = toate)
-vod_max_hours: 12                 # limita pentru un VOD
-chunk_minutes: 5                  # bucati de procesare
-video_max_height: 1080            # 1080 sau 720
+# --- LANGUAGE --------------------------------------------------
+language: "en"                    # speech language for Whisper: en, ro, es, de, fr, pt, ... or "auto" (detect)
+ui_language: "en"                 # dashboard language: en / ro
 
-# Daca YouTube cere "Sign in to confirm you're not a bot":
-#   pune numele browserului in care esti logat pe YouTube: chrome / edge / firefox
-#   (sau cale catre un fisier cookies.txt in youtube_cookies_file)
+# --- SOURCE ----------------------------------------------------
+# YouTube channel to watch (empty = no automatic watching; you can still generate clips from any link in the app).
+# Clip ONLY creators who allow it or run a clipping campaign. Always credit them.
+channel_url: ""
+streamer_name: ""                 # used in hooks/titles (empty = "the streamer")
+game: "GTA 6"                     # game or topic (e.g. "Just Chatting", "the podcast"), used in hooks/titles
+extra_urls: []                    # extra lives/VODs to process at start-up (optional)
+check_live_every_sec: 60          # how often to check whether a new live started
+backfill_from_start: true         # also process what was already streamed before the app noticed the live
+backfill_max_hours: 12            # how far back (YouTube keeps ~12 h of DVR at most)
+process_recent_vods: 0            # how many recent finished streams to process at start-up
+live_title_filter: ""             # regex, e.g. "(?i)gta" = only lives with "GTA" in the title ("" = all)
+vod_max_hours: 12                 # limit for one VOD
+chunk_minutes: 5                  # processing chunk length
+video_max_height: 1080            # 1080 or 720
+
+# If YouTube says "Sign in to confirm you're not a bot":
+#   put the browser you're logged into YouTube with: chrome / edge / firefox (Chrome must be closed)
+#   or a path to a cookies.txt file in youtube_cookies_file. Never share or commit cookie files.
 youtube_cookies_from_browser: ""
 youtube_cookies_file: ""
 
-# --- TRANSCRIERE ---------------------------------------------
-whisper_model: "large-v3"         # large-v3 (cel mai bun, GPU NVIDIA ~6+ GB VRAM) / medium / small
+# --- TRANSCRIPTION ---------------------------------------------
+whisper_model: "large-v3"         # large-v3 (best, NVIDIA GPU ~6+ GB VRAM) / medium / small (CPU)
 whisper_device: "auto"            # auto / cuda / cpu
-whisper_compute_type: "auto"      # auto -> float16 pe GPU, int8 pe CPU
-language: "ro"                    # FORTAT pe romana (nu auto-detect)
-initial_prompt: "live, GTA 6, frate, bă, băi, ce faci, hai, gata, mamă, nu se poate, giveaway, Vice City, Lucia, Jason."   # pune si numele streamerului
+whisper_compute_type: "auto"      # auto -> float16 on GPU, int8 on CPU
+initial_prompt: "GTA 6, Vice City, Lucia, Jason, live stream, chat."   # names/words Whisper should know (add the streamer's name)
 
-# --- SELECTIE MOMENTE (cat mai multe) -------------------------
+# --- MOMENT SELECTION ------------------------------------------
 clip_min_sec: 20
 clip_max_sec: 60
 clip_target_sec: 35
-clips_per_chunk_max: 3            # maxim momente alese la 5 minute de stream
-min_score: 0.9                    # prag (mai mic = mai multe clipuri)
-min_gap_between_clips_sec: 20     # clipuri care nu se suprapun
-use_llm: true                     # se activeaza doar daca setezi LLM_API_KEY (vezi README)
-llm_min_score: 5                  # 0-10, clipurile cu scor LLM sub prag sunt aruncate
-llm_fix_transcript: true          # LLM-ul corecteaza greselile de transcriere inainte de subtitrare
+clips_per_chunk_max: 3            # max moments per 5 minutes of stream
+min_score: 0.9                    # threshold (lower = more clips)
+min_gap_between_clips_sec: 20     # clips don't overlap
+extra_keywords: []                # your own words that mark a good moment, e.g. ["clutch", "headshot", "no way"]
+use_llm: true                     # only used if you set an LLM in .env (see README)
+llm_min_score: 5                  # 0-10, moments the LLM rates below this are dropped
+llm_fix_transcript: true          # the LLM fixes obvious transcription mistakes before captions
 
-# --- RANDARE ---------------------------------------------------
-layout: "split"                   # split = camera sus + joc jos ; blur = tot ecranul pe fundal blurat ; fill = crop centru
-auto_cam: true                    # detecteaza fata streamerului; daca nu e camera -> layout blur automat
-# zona camerei streamerului (fractii x, y, latime, inaltime din cadrul 16:9)
-cam_box: [0.0, 0.118, 0.238, 0.238]
-encoder: "auto"                   # auto -> h264_nvenc daca exista, altfel libx264
-caption_font: "Montserrat Black"   # fonturi incluse: Montserrat Black, Anton, Bebas Neue, Archivo Black, Poppins Black, Bangers (vezi samples/font_comparatie.jpg)
+# --- RENDERING -------------------------------------------------
+layout: "split"                   # split = webcam on top + game below ; blur = whole frame on a blurred background ; fill = centre crop
+auto_cam: true                    # find the streamer's face; no webcam -> blur layout automatically
+cam_box: [0.0, 0.118, 0.238, 0.238]   # usual webcam area (x, y, width, height as fractions of the 16:9 frame)
+encoder: "auto"                   # auto -> h264_nvenc if it works, otherwise libx264
+caption_font: "Montserrat Black"  # bundled: Montserrat Black, Anton, Bebas Neue, Archivo Black, Poppins Black, Bangers
 caption_size: 108
 caption_words_per_line: 3
 hook_seconds: 2.5
-credit_text: ""                   # ex: "@canal pe YouTube" (recomandat: da credit creatorului)
-censor_swears: true              # true = injuraturile apar cu *** in subtitrare (sunetul ramane). TikTok le impinge mai putin altfel
+credit_text: ""                   # e.g. "@channel on YouTube" (recommended: credit the creator)
+censor_swears: true               # swear words show as *** in captions (the audio is unchanged)
 
-# --- POSTARE TIKTOK -------------------------------------------
-auto_post: false                  # false = tu apesi "Posteaza" in aplicatie pe fiecare clip; true = posteaza singur cele mai bune
-manual_min_gap_minutes: 3         # pauza minima intre doua clipuri aprobate de tine
-required_hashtag: ""              # optional, ex. cerut de o campanie de clipping; mereu PRIMUL hashtag
-hashtags: ["#gta6"]               # puse MEREU
-extra_hashtags: ["#gta6romania", "#fyp", "#pentrutine", "#viral", "#romania", "#funny"]   # se aleg aleator cateva, pentru varietate
-hashtags_max: 5                     # cate hashtag-uri in total pe clip (inclusiv required_hashtag)
-recut_sources_max_gb: 15            # spatiu maxim pentru sursele folosite la "Refa clipul" (cele vechi se sterg)
+# --- TIKTOK POSTING (optional) ---------------------------------
+auto_post: false                  # false = you press "Post" on every clip; true = posts the best ones by itself
+manual_min_gap_minutes: 3         # minimum gap between two clips you approved
+required_hashtag: ""              # optional, e.g. required by a clipping campaign; always the FIRST hashtag
+hashtags: ["#gta6"]               # always added
+extra_hashtags: ["#fyp", "#viral", "#gaming", "#funny", "#streamer"]   # a few are picked at random for variety
+hashtags_max: 5                   # total hashtags per clip (including required_hashtag)
+recut_sources_max_gb: 15          # disk space for the sources used by "Re-cut" (oldest are deleted)
 caption_template: "{title} {hashtags}"
-post_interval_min_minutes: 30     # pauza minima intre postari
-post_interval_max_minutes: 45     # pauza maxima (aleator intre min si max)
-daily_post_cap: 30                # maxim postari pe zi (poti mari, dar risc de shadowban)
-quiet_hours: []                   # ex: [3, 4, 5, 6] = nu posta intre 03:00 si 06:59
+post_interval_min_minutes: 30     # minimum gap between automatic posts
+post_interval_max_minutes: 45     # maximum gap (random between min and max)
+daily_post_cap: 30                # max posts per day (higher = more risk of being limited)
+quiet_hours: []                   # e.g. [3, 4, 5, 6] = no automatic posts between 03:00 and 06:59
 post_order: "best_first"          # best_first / newest_first
-visibility: "public"              # public / private (pentru test)
+visibility: "public"              # public / private (for testing)
 browser_channel: "chrome"         # chrome / msedge / chromium
-headless: false                   # lasa false: TikTok blocheaza mai des browserele ascunse
+headless: false                   # keep false: TikTok blocks hidden browsers more often
 
-# --- APLICATIE ------------------------------------------------
-dashboard_port: 8777              # aplicatia se deschide la http://127.0.0.1:8777
+# --- APP -------------------------------------------------------
+dashboard_port: 8777              # the app opens at http://127.0.0.1:8777
 
-# ---------- Efecte virale (se pot schimba si din aplicatie: Setari -> Efecte) ----------
+# --- EFFECTS (also in the app: Settings -> Effects) ------------
 effects:
-  emoji: true          # emoji-uri care apar langa subtitrare (Twemoji, CC-BY 4.0)
-  pop: true            # cuvantul spus "sare"
-  keyword_color: true  # culoare pentru cuvintele cheie (rosu = nervi, verde = ras ...)
-  zoom: true           # punch-in pe tipete / momente tari
-  shake: true          # tremurat usor la rage
-  boost: true          # volum mai tare pe momentele tari (limitator + -14 LUFS, fara distorsiuni)
+  emoji: true          # emoji next to captions (Twemoji, CC-BY 4.0)
+  pop: true            # the spoken word bounces
+  keyword_color: true  # colour for keywords (red = rage, green = laughter ...)
+  zoom: true           # punch-in on screams / big moments
+  shake: true          # light shake on rage
+  boost: true          # louder audio on big moments (limiter + -14 LUFS, no distortion)
   boost_db: 4.0
-  sfx: true            # sunete meme pe varfuri (generate de noi -> fara copyright)
+  sfx: true            # meme sounds on peaks (synthesized by this project -> no copyright issues)
   sfx_volume: 0.45
-  progress_bar: false  # bara de progres jos
+  progress_bar: false  # progress bar at the bottom

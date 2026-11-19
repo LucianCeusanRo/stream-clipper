@@ -1,0 +1,30 @@
+name: Bug report
+description: Something doesn't work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks! Please don't paste API keys, cookies or anything from your .env / data folder."
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: The last ~30 lines from the 📜 Log tab (or data/streamclip.log).
+      render: text
+  - type: input
+    id: env
+    attributes:
+      label: Windows version, GPU, Whisper model
+      placeholder: "Windows 11, RTX 3060 12 GB, large-v3"
+  - type: input
+    id: version
+    attributes:
+      label: Stream Clipper version or commit
+      placeholder: "v1.0.0"

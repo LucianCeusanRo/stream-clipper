@@ -11,5 +11,5 @@ def main(quick=False):
                    CLIPPER_FONTS=str(ROOT / "fonts"), CLIPPER_MODELS=str(ROOT / "models"), CLIPPER_QUICK="1" if quick else "0",
                    PYTHONPATH=str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""))
         r = subprocess.run([sys.executable, "-m", "unittest", "-v", "streamclip._tests"], env=env, cwd=str(ROOT))
-        print("\nTOATE TESTELE AU TRECUT ✔" if r.returncode == 0 else "\nUNELE TESTE AU PICAT ✘ (vezi mai sus)")
+        print("\nALL TESTS PASSED ✔" if r.returncode == 0 else "\nSOME TESTS FAILED ✘ (see above)")
         return r.returncode

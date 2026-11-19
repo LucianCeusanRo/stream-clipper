@@ -1,11 +1,11 @@
-"""Find FUNNY / viral moments in a piece of stream (Romanian).
+"""Find funny / intense moments in a piece of stream. Works on the audio for any language; the keyword list
+covers English and Romanian (add your own words in config.yaml: `extra_keywords`).
 
-Per-second signals (ideas combined from the original gtavi-claudecode moments.py, Auto-Clipper,
-SharkyClips and HighlightMiner):
+Per-second signals (ideas from gtavi-claudecode, Auto-Clipper, SharkyClips and HighlightMiner; see THIRD_PARTY.md):
   loud      loudness jump above the local level (screams, rage)
   yell      loud AND bright (energy 1-4 kHz) = shouting, not just game explosions
   laugh     laughter heuristic: 3-7 Hz bursty envelope + "haha" style words
-  words     Romanian funny/rage/swear/exclamation/giveaway keywords in the transcript
+  words     funny/rage/swear/exclamation/giveaway keywords in the transcript (EN + RO)
   rate      speech rate spike (fast excited talk)
   chat      live chat messages per second (hype messages count double)
 Clips get build-up before the peak and the payoff after it, snapped to sentence boundaries.
@@ -13,7 +13,17 @@ Clips get build-up before the peak and the payoff after it, snapped to sentence 
 import re
 import numpy as np
 
-# weight, regex (lowercase, diacritics-insensitive matching is done on a folded copy)
+# weight, regex (lowercase, diacritics-insensitive matching is done on a folded copy). Romanian first, English after.
+KEYWORDS_EN = [
+    r"\b(lol|lmao|lmfao|rofl|i'?m dying|i can'?t breathe|crying laughing)\b",
+    r"\b(fuck\w*|shit\w*|damn\w*|wtf|bullshit|stupid|idiot\w*|dumb\w*|trash|bro what)\b",
+    r"\b(oh my god|omg|no way|what the|are you kidding|let'?s go+|wait wait|no no no|insane|crazy|"
+    r"unbelievable|holy|dude|bro|wow|yo+)\b",
+    r"\b(giveaway|winner|win\w*|prize|donat\w*|super ?chat|sub\w*|gifted|raid)\b",
+    r"\b(cops?|police|chase|crash\w*|explod\w*|kill\w*|died|dead|heist|bank|robbery|escape\w*|"
+    r"lucia|jason|vice city|mission)\b",
+    r"\b(chat|you guys|guys|comment\w*|what do you think|look at this)\b",
+]
 KEYWORDS = [
     (2.0, r"\b(ha){2,}|\bhah+a*|\bahah\w*|\bhihi\w*|\bmor de r[aâ]s|\bm-am pi[sș]at|\bplm\b|\bxd\b"),          # laughter
     (1.6, r"\b(pula|pizd\w*|muie|futu\w*|fut\b|ba[sș]it\w*|c[aă]cat\w*|dracu\w*|naiba|ce pl\w*|bag[aă]-?mi-?a[sș]|"
@@ -27,7 +37,24 @@ KEYWORDS = [
           r"lucia|jason|vice city|misiun\w*)"),                                                                # GTA action
     (1.0, r"\b(chat\w*|voi|v-am zis|ce zice[tț]i|scrie[tț]i|uita[tț]i-v[aă])"),                                 # banter with chat
 ]
+KEYWORDS = [(w, p + "|" + en) for (w, p), en in zip(KEYWORDS, KEYWORDS_EN)]
 _RX = [(w, re.compile(p, re.I)) for w, p in KEYWORDS]
+_extra_src = None
+_extra_rx = None
+
+
+def _extra():
+    """Optional user keywords from config.yaml: extra_keywords: ["clutch", "headshot", ...] (count as exclamations)."""
+    global _extra_src, _extra_rx
+    try:
+        from .util import cfg
+        words = tuple(str(w).strip().lower() for w in (cfg().get("extra_keywords") or []) if str(w).strip())
+    except Exception:
+        words = ()
+    if words != _extra_src:
+        _extra_src = words
+        _extra_rx = re.compile(r"\b(" + "|".join(re.escape(fold(w)) for w in words) + r")\b") if words else None
+    return _extra_rx
 
 
 def fold(s):
@@ -40,6 +67,11 @@ def _kw_score(text):
         n = len(rx.findall(t))
         if n:
             s += w * min(n, 3); cats.append(name)
+    rx = _extra()
+    if rx is not None and rx.search(t):
+        s += 1.3
+        if "exclamatie" not in cats:
+            cats.append("exclamatie")
     return s, cats
 
 

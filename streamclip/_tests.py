@@ -8,7 +8,7 @@ from streamclip import util, db, detect, render, transcribe, texts, pipeline, yo
 
 QUICK = os.environ.get("CLIPPER_QUICK") == "1"
 # the tests use a clipping-campaign style required hashtag; T0 checks the default (none)
-util.save_settings({"required_hashtag": "#mycampaign", "streamer_name": "Alex", "game": "GTA 6"})
+util.save_settings({"required_hashtag": "#mycampaign", "streamer_name": "Alex", "game": "GTA 6", "language": "ro"})
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
 
 
@@ -59,6 +59,20 @@ class T0NoRequiredTag(unittest.TestCase):
         util.save_settings({"streamer_name": ""})
         self.assertIn("streamerul", texts.fill("{name}"))
         util.save_settings({"streamer_name": "Alex"})
+
+    def test_english_mode(self):
+        util.save_settings({"language": "en", "streamer_name": ""})
+        try:
+            self.assertIn("the streamer", texts.fill("{name}"))
+            hook, title, cat = texts.make({"cats": ["ras"], "peak": 5, "start": 0}, [])
+            self.assertTrue(hook.isupper() or "😂" in hook)
+            self.assertNotRegex(title + hook, r"[ăâîșț]")
+            self.assertIn("ras", detect._kw_score("lmao")[1])
+            self.assertIn("exclamatie", detect._kw_score("oh my god no way")[1])
+            util.save_settings({"extra_keywords": ["headshot"]})
+            self.assertGreater(detect._kw_score("what a headshot")[0], 0)
+        finally:
+            util.save_settings({"language": "ro", "streamer_name": "Alex", "extra_keywords": []})
 
 
 class T1Config(unittest.TestCase):

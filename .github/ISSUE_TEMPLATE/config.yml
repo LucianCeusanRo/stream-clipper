@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/LucianCeusanRo/stream-clipper/discussions
+    about: Ask questions or share ideas in Discussions.
+  - name: "Debate: clipping streamers, free promotion or taking their work?"
+    url: https://github.com/LucianCeusanRo/stream-clipper/discussions/1
+    about: Join the discussion.

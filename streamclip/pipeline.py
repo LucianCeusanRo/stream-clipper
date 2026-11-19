@@ -154,7 +154,7 @@ def process_chunk(chunk, overrides=None):
                 thumb = None
             status = "pending"          # waits for your review in the app (or auto-post, if ON)
             feat = cand.get("feat") or {}
-            vpct, vfac = viral.compute(feat, cand["end"] - cand["start"], hook.startswith("„"), cat,
+            vpct, vfac = viral.compute(feat, cand["end"] - cand["start"], hook.startswith(("„", "\u201c")), cat,
                                        sum(1 for w in wrel if w["s"] < 2), llm_sc)
             srcf, ps, pe = save_source(src, cand["start"], cand["end"], dur, out)
             db.add_clip(video_id=vid, start=s_abs, end=e_abs, score=score, file=str(out), title=title,
@@ -279,7 +279,7 @@ def recut(cid, dstart=0.0, dend=0.0, snap=True):
     except Exception:
         thumb = None
     feat = m.get("feat") or {}
-    vpct, vfac = viral.compute(feat, ne - ns, (r["hook"] or "").startswith("„"), r["cat"] or m.get("cat") or "_",
+    vpct, vfac = viral.compute(feat, ne - ns, (r["hook"] or "").startswith(("„", "\u201c")), r["cat"] or m.get("cat") or "_",
                                sum(1 for w in words if w["s"] < 2), m.get("llm")) if feat else (r["viral"], m.get("factors"))
     a0 = float(m["src_abs0"])
     old = Path(r["file"])

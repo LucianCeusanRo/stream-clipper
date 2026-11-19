@@ -1,14 +1,14 @@
 """Local dashboard for Stream Clipper: a tiny JSON API + one HTML page (stdlib only, no extra web framework).
 Listens on 127.0.0.1 only, so nothing is reachable from outside the PC."""
-import json, mimetypes, threading, time
+import json, mimetypes, re, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
-from . import app, db, effects, jobs, render, pipeline, texts, viral
+from . import app, db, effects, i18n, jobs, render, pipeline, texts, viral
 from .util import DATA, cfg, log, save_settings
 
 WEB = Path(__file__).parent / "web"
-EDITABLE = {"channel_url": str, "streamer_name": str, "game": str, "required_hashtag": str, "credit_text": str,
+EDITABLE = {"language": str, "ui_language": str, "extra_keywords": list, "channel_url": str, "streamer_name": str, "game": str, "required_hashtag": str, "credit_text": str,
             "hashtags": list, "post_interval_min_minutes": float, "post_interval_max_minutes": float,
             "daily_post_cap": int, "auto_post": bool, "min_score": float, "clips_per_chunk_max": int,
             "quiet_hours": list, "visibility": str, "layout": str, "censor_swears": bool, "caption_template": str,
@@ -31,8 +31,14 @@ def clip_row(r):
         fac = None
     if d.get("viral") is None:
         d["viral"] = viral.fallback(d.get("score"))
-    d["factors_list"] = [[viral.LABELS.get(k, k), v] for k, v in (fac or {}).items()]
-    d["viral_tip"] = "Șansă de viral (estimare): " + str(d["viral"]) + "%\n" + viral.tooltip(fac)
+    if i18n.english():
+        d["factors_list"] = [[i18n.LABELS_EN.get(k, k), v] for k, v in (fac or {}).items()]
+        d["viral_tip"] = ("Viral chance (estimate): " + str(d["viral"]) + "%\n"
+                          + "\n".join(f"{i18n.LABELS_EN.get(k, k)}: {v}%" for k, v in (fac or {}).items()))
+        d["why"] = i18n.en(d.get("why"))
+    else:
+        d["factors_list"] = [[viral.LABELS.get(k, k), v] for k, v in (fac or {}).items()]
+        d["viral_tip"] = "Șansă de viral (estimare): " + str(d["viral"]) + "%\n" + viral.tooltip(fac)
     d["can_recut"] = bool(d.get("src")) and Path(d["src"]).exists()
     return d
 
@@ -85,11 +91,15 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path); qs = parse_qs(u.query)
         try:
             if u.path in ("/", "/index.html"):
-                return self._file(WEB / "index.html")
+                ui = str(cfg().get("ui_language") or "en").lower()
+                return self._file(WEB / ("index.ro.html" if ui == "ro" else "index.html"))
             if u.path.startswith("/static/"):
                 return self._file(WEB / Path(u.path).name)
             if u.path == "/api/state":
-                return self._json(app.snapshot())
+                snap = app.snapshot()
+                if i18n.english():
+                    snap["status"] = {k: i18n.en(v) for k, v in snap["status"].items()}
+                return self._json(snap)
             if u.path == "/api/clips":
                 st = qs.get("status", ["pending"])[0]
                 if st == "posted":
@@ -105,7 +115,10 @@ class H(BaseHTTPRequestHandler):
                 c = cfg()
                 return self._json(dict({k: c.get(k) for k in EDITABLE}, fonts=list(render.FONTS), effects=effects.settings()))
             if u.path == "/api/jobs":
-                return self._json(jobs.list_jobs())
+                lst = jobs.list_jobs()
+                if i18n.english():
+                    lst = [dict(j, stage=i18n.en(j.get("stage"))) for j in lst]
+                return self._json(lst)
             if u.path == "/api/log":
                 p = DATA / "streamclip.log"
                 lines = p.read_text(encoding="utf-8", errors="replace").splitlines()[-int(qs.get("n", ["200"])[0]):] if p.exists() else []
@@ -206,6 +219,12 @@ class H(BaseHTTPRequestHandler):
                     ch[k] = v
                 if "hashtags_max" in ch and not 1 <= ch["hashtags_max"] <= 10:
                     return self._json({"error": "numarul de hashtag-uri trebuie sa fie intre 1 si 10"}, 400)
+                if "ui_language" in ch and ch["ui_language"] not in ("en", "ro"):
+                    return self._json({"error": "ui_language: en / ro"}, 400)
+                if "language" in ch:
+                    ch["language"] = ch["language"].strip().lower() or "auto"
+                    if not re.fullmatch(r"auto|[a-z]{2,3}", ch["language"]):
+                        return self._json({"error": "language: auto or a code like en, ro, es"}, 400)
                 if "caption_font" in ch and ch["caption_font"] not in render.FONTS:
                     return self._json({"error": "font necunoscut"}, 400)
                 if "post_interval_min_minutes" in ch and ch["post_interval_min_minutes"] < 1:
