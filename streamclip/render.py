@@ -6,7 +6,8 @@ which has all Romanian diacritics (ă â î ș ț). NVENC on NVIDIA GPUs, libx26
 """
 import re, subprocess, threading
 from pathlib import Path
-from .util import FONTS, cfg, log, run, tool
+from .util import FONTS as FONT_DIR, cfg, log, run, run_ffmpeg_progress, tool
+from . import texts
 
 W, H = 1080, 1920
 TOP = 640                      # split layout: camera panel height
@@ -158,6 +159,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if body:
             ev.append(f"Dialogue: 1,{ts(0)},{ts(min(hook_secs, dur))},Hook,,0,0,0,,{{\\pos({W // 2},{hook_y})"
                       f"\\fad(0,200)\\fscx85\\fscy85\\t(0,120,\\fscx100\\fscy100)}}{body}")
+    extra = (fx or {}).get("_extra") or {}
+    wf = extra.get("wait_for_it")
+    if wf and (fx or {}).get("wait_for_it", True):          # payoff comes late -> tease it
+        a, b = float(wf[0]), float(wf[1])
+        ev.append(f"Dialogue: 3,{ts(a)},{ts(b)},Hook,,0,0,0,,{{\\pos({W // 2},{CAP_Y.get(layout, 1300) - 230})\\fad(150,150)}}{'STAI AȘA…' if texts.is_ro() else 'WAIT FOR IT…'}")
+    day = extra.get("ziua")
+    if day and (fx or {}).get("ziua_badge"):
+        ev.append(f"Dialogue: 3,{ts(0)},{ts(dur)},Credit,,0,0,0,,{{\\an9\\pos({W - 36},{36})\\fs52\\bord4\\c&H00FFFFFF&\\3c&H005522FF&}}{'ZIUA' if texts.is_ro() else 'DAY'} {int(day)}")
     credit = c.get("credit_text")
     if credit:
         y = TOP - 14 if layout == "split" else H - 380
@@ -179,9 +188,17 @@ def video_filter(layout, src_w, src_h, ass_path, cam_box=None):
         gw = even(src_w * gh / src_h)
         gx = even(max(0, (gw - W) / 2 + gw * 0.04))       # a bit right of centre (cam + minimap are left)
         gx = min(gx, gw - W)
-        v = (f"[0:v]split[a][b];[a]crop={cw}:{ch}:{cx}:{cy},scale={W}:{TOP}:force_original_aspect_ratio=increase,"
-             f"crop={W}:{TOP},setsar=1[cam];[b]scale={gw}:{gh},crop={W}:{gh}:{gx}:0,setsar=1[game];"
-             f"[cam][game]vstack[v]")
+        if cw / max(1, ch) > (W / TOP) * 1.15:
+            # wide webcam (streamer + guest side by side): fit the WHOLE width (nobody cut in half),
+            # fill the rest of the panel with a blurred copy of the cam
+            v = (f"[0:v]split[a][b];[a]crop={cw}:{ch}:{cx}:{cy},split[c1][c2];"
+                 f"[c1]scale={W}:{TOP}:force_original_aspect_ratio=increase,crop={W}:{TOP},boxblur=20:2,eq=brightness=-0.12[cbg];"
+                 f"[c2]scale={W}:-2[cfg];[cbg][cfg]overlay=0:(H-h)/2,setsar=1[cam];"
+                 f"[b]scale={gw}:{gh},crop={W}:{gh}:{gx}:0,setsar=1[game];[cam][game]vstack[v]")
+        else:
+            v = (f"[0:v]split[a][b];[a]crop={cw}:{ch}:{cx}:{cy},scale={W}:{TOP}:force_original_aspect_ratio=increase,"
+                 f"crop={W}:{TOP},setsar=1[cam];[b]scale={gw}:{gh},crop={W}:{gh}:{gx}:0,setsar=1[game];"
+                 f"[cam][game]vstack[v]")
     elif layout == "fill":
         v = f"[0:v]scale=-2:{H},crop={W}:{H},setsar=1[v]"
     else:  # blur
@@ -191,8 +208,9 @@ def video_filter(layout, src_w, src_h, ass_path, cam_box=None):
 
 
 def subs_tail(label, ass_path, pre="fps=30,"):
-    sub = str(ass_path).replace("\\", "/").replace(":", "\\:")
-    fd = str(FONTS).replace("\\", "/").replace(":", "\\:")
+    def q(p):   # ffmpeg filter-arg escaping (drive colon, quotes) - paths may contain spaces/apostrophes
+        return str(p).replace("\\", "/").replace(":", "\\:").replace("'", "'\\\\\\''")
+    sub, fd = q(ass_path), q(FONT_DIR)     # (FONTS below is the font-preset table, not the folder)
     return f"{label}{pre}subtitles='{sub}':fontsdir='{fd}'[vo]"
 
 
@@ -236,6 +254,9 @@ def audio_graph(p, fx, sfx_input_idx):
     vexp = effects.volume_expr(p, float(fx.get("boost_db", 4.0)))
     if vexp:
         chain.append(vexp)
+    if fx.get("bass", True) and fx.get("boost", True):
+        for a, b in (p.get("boost") or [])[:3]:          # "bass boost" on the zoom punch-ins
+            chain.append(f"bass=g=7:f=110:w=0.6:enable='between(t,{a:.2f},{b + 0.3:.2f})'")
     g = [f"[0:a:0]{','.join(chain)}[a0]"]
     mix = ["[a0]"]
     for k, (t, i) in enumerate(zip(p["sfx"], sfx_input_idx)):
@@ -281,12 +302,12 @@ def fix_loudness(path, target=-14.0):
     return target
 
 
-def render(src, s0, e0, words_rel, hook, out_mp4: Path, layout=None, cam_box=None, fx=None):
+def render(src, s0, e0, words_rel, hook, out_mp4: Path, layout=None, cam_box=None, fx=None, extra=None):
     """src: media file; s0/e0: seconds in that file; words_rel: words with times relative to s0."""
     from . import effects
     c = cfg()
     layout = layout or c.get("layout", "split")
-    fx = fx or effects.settings()
+    fx = dict(fx or effects.settings(), _extra=extra or {})
     sw, sh = probe_size(src)
     dur = e0 - s0
     p = effects.plan(src, s0, e0, words_rel, fx)
@@ -313,9 +334,12 @@ def render(src, s0, e0, words_rel, hook, out_mp4: Path, layout=None, cam_box=Non
     cmd = [tool("ffmpeg"), "-y", "-v", "error", "-ss", f"{s0:.2f}", "-t", f"{dur:.2f}", "-i", src, *extra, *sfx_in,
            "-filter_complex", graph, "-map", "[vo]", *amap, *venc, "-pix_fmt", "yuv420p", "-t", f"{dur:.2f}",
            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", out_mp4]
-    run(cmd, timeout=1800)
+    from . import progress
+    run_ffmpeg_progress(cmd, dur, lambda q: progress.pct(q * 0.9), timeout=1800)
     if audio:
+        progress.pct(91, detail="normalizez volumul (-14 LUFS)")
         fix_loudness(out_mp4, float(c.get("target_lufs", -14)))
+    progress.pct(100)
     save_plan = {k: v for k, v in p.items() if k != "cats"}
     out_mp4.with_suffix(".fx.json").write_text(__import__("json").dumps(save_plan), encoding="utf-8")
     return out_mp4

@@ -98,6 +98,59 @@ def stable_face(dets, n_frames):
     return best, best_hits
 
 
+def iou(a, b):
+    """Overlap of two [x, y, w, h] boxes: intersection / union, 0..1."""
+    ax2, ay2, bx2, by2 = a[0] + a[2], a[1] + a[3], b[0] + b[2], b[1] + b[3]
+    iw = max(0.0, min(ax2, bx2) - max(a[0], b[0]))
+    ih = max(0.0, min(ay2, by2) - max(a[1], b[1]))
+    inter = iw * ih
+    total = a[2] * a[3] + b[2] * b[3] - inter
+    return inter / total if total > 0 else 0.0
+
+
+def union(boxes):
+    """Smallest [x, y, w, h] that contains every box."""
+    x0 = min(b[0] for b in boxes); y0 = min(b[1] for b in boxes)
+    x1 = max(b[0] + b[2] for b in boxes); y1 = max(b[1] + b[3] for b in boxes)
+    return [x0, y0, x1 - x0, y1 - y0]
+
+
+def stable_faces(dets, n_frames, min_hits=None):
+    """Every face that stays in place over the sampled frames (e.g. two people on one webcam).
+    -> [(median [x, y, w, h], frames seen), ...], most often seen first."""
+    need = min_hits or max(3, n_frames // 2)
+    found = []
+    pool = [list(f) for fr in dets for f in fr]
+    while pool:
+        seed = max(pool, key=lambda f: f[4])
+        cx, cy = _center(seed)
+        tol = max(seed[2], seed[3]) * 0.6
+        group = []
+        for fr in dets:
+            near = [f for f in fr if abs(_center(f)[0] - cx) <= tol and abs(_center(f)[1] - cy) <= tol]
+            if near:
+                group.append(max(near, key=lambda f: f[4]))
+        pool = [f for f in pool if not (abs(_center(f)[0] - cx) <= tol and abs(_center(f)[1] - cy) <= tol)]
+        if len(group) >= need:
+            found.append(([float(np.median([g[k] for g in group])) for k in range(4)], len(group)))
+    return sorted(found, key=lambda t: -t[1])
+
+
+def group_faces(main, others, max_dx=9.0, max_dy=1.5):
+    """The main face plus the other stable faces sitting next to it (same webcam: about the same height,
+    within max_dx face-widths sideways and max_dy face-heights up/down). Boxes in the same units as main."""
+    group = [main]
+    for o in others:
+        if iou(o, main) > 0.3:
+            continue                                # that's the main face itself
+        dx = abs(_center(o)[0] - _center(main)[0]) / max(main[2], 1e-6)
+        dy = abs(_center(o)[1] - _center(main)[1]) / max(main[3], 1e-6)
+        size = o[2] / max(main[2], 1e-6)
+        if dx <= max_dx and dy <= max_dy and 0.5 <= size <= 2.0:
+            group.append(o)
+    return group
+
+
 def face_box(face, frame_w, frame_h, widths=4.0):
     """A 16:9 box (fractions of the frame) around a face, about `widths` face-widths wide, face slightly above centre."""
     fx, fy, fw, fh = face[0] / frame_w, face[1] / frame_h, face[2] / frame_w, face[3] / frame_h

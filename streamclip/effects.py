@@ -14,13 +14,19 @@ EMOJI = {"ras": ["1f602", "1f62d", "1f480"], "injuratura": ["1f92c"], "exclamati
          "giveaway": ["1f381"], "actiune": ["1f525"], "chat": ["1f4ac"]}
 PRIO = ["ras", "injuratura", "giveaway", "exclamatie", "actiune", "chat"]
 DEFAULTS = {"emoji": True, "pop": True, "keyword_color": True, "zoom": True, "shake": True, "progress_bar": False,
-            "sfx": True, "boost": True, "sfx_volume": 0.45, "boost_db": 4.0}
+            "sfx": True, "boost": True, "sfx_volume": 0.45, "boost_db": 4.0, "bass": True, "wait_for_it": True,
+            "ziua_badge": False}
 
 
 def settings():
     c = cfg()
     fx = dict(DEFAULTS)
     fx.update(c.get("effects") or {})
+    try:
+        from . import styles
+        fx.update(styles.fx_overrides())
+    except Exception:
+        pass
     return fx
 
 

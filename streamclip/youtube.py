@@ -144,9 +144,19 @@ class DashBackfill:
         a, b = int(t0 // self.frag), int(t1 // self.frag) + 1
         s = requests.Session()
         parts = {}
+        from . import progress
+        n_all, done = 2 * max(1, b - a), [0]
+        lk = threading.Lock()
+
+        def get(url, sq):
+            d = self._get(url, sq, s)
+            with lk:
+                done[0] += 1
+                progress.pct(100 * done[0] / n_all, detail=f"fragment {done[0]}/{n_all}")
+            return d
         for kind, f in (("v", self.v), ("a", self.a)):
             with cf.ThreadPoolExecutor(8) as ex:
-                data = list(ex.map(lambda sq: self._get(f["url"], sq, s), range(a, b)))
+                data = list(ex.map(lambda sq: get(f["url"], sq), range(a, b)))
             p = out.with_suffix(f".{kind}.mp4")
             with open(p, "wb") as fh:
                 for d in data:

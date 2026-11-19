@@ -5,6 +5,7 @@ Whisper is skipped: the transcript is a scripted list of words (English, or Roma
 Used to make the screenshots in docs/. Usage:
 
     python tools/demo.py            # then open http://127.0.0.1:8833
+    DEMO_AUTOSUBMIT=0 python tools/demo.py   # empty dashboard; paste the demo video path yourself (used for the demo GIF)
 """
 import os, sys, tempfile, time, wave
 from pathlib import Path
@@ -93,7 +94,7 @@ def main():
         make_video(src)
     port = int(os.environ.get("DEMO_PORT", "8833"))
     web.serve(port)
-    if not db.q("SELECT id FROM clips LIMIT 1"):
+    if os.environ.get("DEMO_AUTOSUBMIT", "1") != "0" and not db.q("SELECT id FROM clips LIMIT 1"):
         jobs.submit(str(src), clips=4)
     print(f"open http://127.0.0.1:{port}", flush=True)
     while True:

@@ -69,11 +69,15 @@ extra_hashtags: ["#fyp", "#viral", "#gaming", "#funny", "#streamer"]   # a few a
 hashtags_max: 5                   # total hashtags per clip (including required_hashtag)
 recut_sources_max_gb: 15          # disk space for the sources used by "Re-cut" (oldest are deleted)
 caption_template: "{title} {hashtags}"
-post_interval_min_minutes: 30     # minimum gap between automatic posts
-post_interval_max_minutes: 45     # maximum gap (random between min and max)
-daily_post_cap: 30                # max posts per day (higher = more risk of being limited)
+post_interval_min_minutes: 20     # minimum gap between automatic posts ("Normal" pace)
+post_interval_max_minutes: 30     # maximum gap (random between min and max)
+post_jitter_minutes: 4            # +/- a few random minutes so posts do not look scheduled
+post_preset: "normal"             # safe (20/day, 40-60 min) / normal (45/day, 20-30 min) / aggressive (60/day, 15-20 min)
+daily_post_cap: 45                # max posts per day (higher = more risk of being limited by TikTok)
 quiet_hours: []                   # e.g. [3, 4, 5, 6] = no automatic posts between 03:00 and 06:59
-post_order: "best_first"          # best_first / newest_first
+post_order: "viral_first"         # viral_first = highest viral chance first; newest_first = newest first
+auto_post_min_viral: 40           # auto-post only posts clips with viral chance >= 40% (clips you approve with Post always go)
+dedupe_similarity: 0.8            # clips with almost the same words (>= 80%) are not made / posted twice
 visibility: "public"              # public / private (for testing)
 browser_channel: "chrome"         # chrome / msedge / chromium
 headless: false                   # keep false: TikTok blocks hidden browsers more often
@@ -93,3 +97,14 @@ effects:
   sfx: true            # meme sounds on peaks (synthesized by this project -> no copyright issues)
   sfx_volume: 0.45
   progress_bar: false  # progress bar at the bottom
+
+# --- disk & cleanup ---
+delete_after_post: false          # delete the video file N days after it was posted (thumbnail + link stay)
+delete_after_post_days: 1
+keep_raw_chunks_hours: 0          # 0 = raw stream chunks are deleted right after processing
+skipped_retention_days: 7         # skipped clips are deleted from disk after N days (0 = never)
+disk_budget_gb: 150               # max GB for the data folder; above it, oldest/posted files go first (0 = no limit)
+
+# --- updates ---
+auto_update: true                 # at every start: install the newest official GitHub release (SHA-256 checked)
+check_updates: true               # show "update available" in the app

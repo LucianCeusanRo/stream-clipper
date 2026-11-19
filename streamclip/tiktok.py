@@ -106,16 +106,86 @@ def _dismiss(page):
             pass
 
 
+# TikTok Studio texts that mean "slow down / account limited" (EN + RO). Matched case-insensitively.
+WARN_RX = re.compile(
+    r"(posting too (fast|frequently|often)|too many (posts|uploads|requests|attempts)|try again later|"
+    r"you'?re (posting|uploading) too|temporarily (restricted|banned|unable|blocked)|restricted from posting|"
+    r"(account|posting) (is )?(restricted|suspended|limited|banned)|community guidelines violation|"
+    r"unable to (post|upload)|upload failed|couldn'?t (post|upload)|something went wrong|rate limit|"
+    r"verify (it'?s|that it'?s) you|security (check|verification)|unusual activity|"
+    r"postezi prea (des|repede)|prea multe (postări|postari|încărcări|incarcari|încercări|incercari)|"
+    r"(încearcă|incearca|reîncearcă|reincearca) (din nou )?mai (târziu|tarziu)|restricționat|restrictionat|"
+    r"cont(ul)? (tău |tau )?(a fost )?(suspendat|restricționat|restrictionat|limitat)|nu (se )?poate (posta|încărca|incarca)|"
+    r"încărcarea a eșuat|incarcarea a esuat|ceva nu a funcționat|ceva n-a mers|activitate neobișnuită|verifică(-te)? identitatea)",
+    re.I)
+
+
+def find_warning(text):
+    """-> the exact TikTok sentence that matches a limit/warning pattern, or None."""
+    if not text:
+        return None
+    for line in text.splitlines():
+        line = line.strip()
+        if line and len(line) < 300 and WARN_RX.search(line):
+            return line
+    return None
+
+
 def upload(video: Path, caption: str, visibility=None):
     """Upload one video. Returns (ok, message, url_or_None)."""
     from .texts import finalize_caption
-    caption = finalize_caption(caption)        # last safety net: required_hashtag first, if set
+    caption = finalize_caption(caption)        # last safety net: the required hashtag (if set) first, always
     with _lock:
         ok, msg = _upload(video, caption, visibility)
         url = None
         if ok:
             url = latest_video_url()
         return ok, msg, url
+
+
+def _body(page):
+    try:
+        return page.inner_text("body", timeout=3000)
+    except Exception:
+        return ""
+
+
+def recent_posts(n=15):
+    """Best effort: [(url, text)] of the newest posts in TikTok Studio (text = description shown in the list).
+    None if the page could not be read (not logged in, layout changed...)."""
+    from playwright.sync_api import sync_playwright
+    try:
+        with _lock, sync_playwright() as p:
+            ctx = _ctx(p)
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto("https://www.tiktok.com/tiktokstudio/content", wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(7000)
+            if "login" in page.url:
+                ctx.close(); return None
+            rows = page.evaluate("""(n) => [...document.querySelectorAll('a[href*="/video/"]')].slice(0, n).map(a => {
+                let el = a; for (let i = 0; i < 6 && el.parentElement; i++) el = el.parentElement;
+                return [a.href, (el.innerText || '').slice(0, 400)] })""", n)
+            ctx.close()
+            return rows
+    except Exception as e:
+        log.warning("nu pot citi postarile recente din TikTok Studio: %s", str(e)[:120])
+        return None
+
+
+def find_posted(caption, posts=None):
+    """Is a post with (the start of) this caption already online? -> url / False / None (can't tell)."""
+    posts = recent_posts() if posts is None else posts
+    if posts is None:
+        return None
+    def norm(s):
+        return re.sub(r"\s+", " ", re.sub(r"#\S+", "", (s or "").lower())).strip()
+    key = norm(caption)[:40]
+    if len(key) < 8:
+        return None
+    for url, text in posts:
+        if key and key in norm(text):
+            return url or True
+    return False
 
 
 def latest_video_url():
@@ -132,6 +202,51 @@ def latest_video_url():
             return href
     except Exception:
         return None
+
+
+def required_tag():
+    """The campaign hashtag from Settings (empty = none). Posting is refused if it does not become a real tag."""
+    t = str(cfg().get("required_hashtag") or "").strip()
+    return ("#" + t.lstrip("#")).lower() if t.strip("#") else ""
+
+
+def _linked_hashtags(ed):
+    """Hashtags TikTok turned into real (clickable) tags: its editor wraps them in span.mention."""
+    try:
+        return {t.strip().lower() for t in ed.locator("span.mention, [data-testid='mentionText']").all_inner_texts()}
+    except Exception:
+        return set()
+
+
+def _type_hashtag(frame, page, tag):
+    """Type a hashtag and pick it from TikTok's suggestion list (a typed space alone leaves it as plain text)."""
+    page.keyboard.type(tag, delay=70)
+    want = tag.lower()
+    items = frame.locator(".hashtag-suggestion-item, [role='option']")
+    end = time.time() + 6
+    while time.time() < end:
+        page.wait_for_timeout(400)
+        try:
+            n = items.count()
+        except Exception:
+            n = 0
+        for i in range(min(n, 12)):
+            it = items.nth(i)
+            try:
+                topic = it.locator(".hash-tag-topic").first
+                name = (topic.inner_text(timeout=500) if topic.count() else it.inner_text(timeout=500).split("\n")[0]).strip().lower()
+            except Exception:
+                continue
+            if name == want:
+                try:
+                    it.click(timeout=2000)
+                except Exception:
+                    page.keyboard.press("Enter")
+                page.wait_for_timeout(500)
+                return True                      # TikTok adds the trailing space itself
+    page.keyboard.type(" ", delay=30)            # brand-new tag with no suggestion: stays plain text
+    log.warning("hashtag %s nu a aparut in sugestii; ramane text", tag)
+    return False
 
 
 def _upload(video: Path, caption: str, visibility=None):
@@ -158,13 +273,17 @@ def _upload(video: Path, caption: str, visibility=None):
             ed.click()
             page.keyboard.press("Control+A"); page.keyboard.press("Delete")
             for part in caption.split(" "):
-                if part.startswith("#"):
-                    page.keyboard.type(part, delay=60)
-                    page.wait_for_timeout(1800)          # hashtag suggestion popup
-                    page.keyboard.type(" ", delay=30)
+                if not part:
+                    continue
+                if part.startswith("#") and len(part) > 1:
+                    _type_hashtag(frame, page, part)
                 else:
                     page.keyboard.type(part + " ", delay=25)
             page.wait_for_timeout(800)
+            req = required_tag()
+            if req and req not in _linked_hashtags(ed):
+                _shot(page, "hashtag_not_linked")
+                return False, f"{req} nu a devenit hashtag clickabil (doar text) - nu am postat"
             if visibility != "public":
                 try:
                     frame.get_by_text(re.compile("Everyone|Toată lumea|Oricine")).first.click(timeout=3000)
@@ -184,7 +303,12 @@ def _upload(video: Path, caption: str, visibility=None):
                 page.wait_for_timeout(2000)
             else:
                 _shot(page, "post_button_timeout")
-                return False, "upload-ul nu s-a terminat in 10 minute"
+                w = find_warning(_body(page))
+                return False, (f"limitare TikTok: {w}" if w else "upload-ul nu s-a terminat in 10 minute")
+            w = find_warning(_body(page))
+            if w:
+                _shot(page, "tiktok_warning")
+                return False, f"limitare TikTok: {w}"
             _dismiss(page)
             post.click()
             # optional "Post now" confirm (copyright check dialog)
@@ -201,6 +325,10 @@ def _upload(video: Path, caption: str, visibility=None):
                     txt = page.inner_text("body", timeout=2000)
                 except Exception:
                     pass
+                w = find_warning(txt)
+                if w:
+                    _shot(page, "tiktok_warning")
+                    return False, f"limitare TikTok: {w}"
                 if "tiktokstudio/content" in page.url or any(s in txt for s in (
                         "Your video has been uploaded", "Video published", "Videoclipul a fost publicat",
                         "videoclipul tău a fost încărcat", "Manage your posts", "Gestionează postările")):

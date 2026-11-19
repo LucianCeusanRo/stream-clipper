@@ -1,8 +1,11 @@
 @echo off
 REM ================================================================
-REM  Stream Clipper - instalare (o singura data). Fara winget, fara "py",
-REM  fara drepturi de administrator. Merge din orice folder/disc,
-REM  si cu spatii in cale (ex. "D:\Programe mele\stream-clipper").
+REM  Stream Clipper - setup (once). No winget, no "py", no admin rights.
+REM  Works from any folder/drive, also with spaces in the path.
+REM
+REM    setup.bat                 full setup (what you run by hand)
+REM    setup.bat step NAME       one step, no pauses (used by the Windows installer)
+REM                              NAME = python, ffmpeg, deno, venv, packages, browser, model, check
 REM ================================================================
 chcp 65001 >nul
 setlocal EnableExtensions DisableDelayedExpansion
@@ -15,21 +18,148 @@ set "HELP=%~dp0tools\setup_helpers.ps1"
 set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if not exist "%PS%" set "PS=powershell"
 set "DL=%TEMP%\streamclip_setup"
+set "VPY=%APP%.venv\Scripts\python.exe"
 if not exist "%DL%" mkdir "%DL%"
 if not exist "%BIN%" mkdir "%BIN%"
 REM programs downloaded by setup (ffmpeg, deno) live in bin\ -> visible to everything started from here
 set "PATH=%BIN%;%PATH%"
 
+if /i "%~1"=="step" (
+  call :s_%~2
+  exit /b %ERRORLEVEL%
+)
+
 echo ================================================
-echo   STREAM CLIPPER - instalare (o singura data)
+echo   STREAM CLIPPER - setup (only once)
 echo   Folder: %APP%
 echo ================================================
+call :s_python   || goto failed
+call :s_ffmpeg   || goto failed
+call :s_deno
+call :s_venv     || goto failed
+call :s_packages || goto failed
+call :s_browser
+call :s_model
+call :s_check
+echo [*] Running the self-test...
+"%VPY%" -m streamclip selftest --quick
+if errorlevel 1 echo [!] Some tests failed - please open an issue on GitHub with the text of this window.
+echo [*] Creating the "Stream Clipper" desktop shortcut...
+set "LNK=%APP%Stream Clipper.exe"
+if not exist "%LNK%" set "LNK=%APP%run.bat"
+"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%HELP%" -Action shortcut -Target "%LNK%" -WorkDir "%APPD%" -Icon "%APP%assets\icon.ico"
+if errorlevel 1 echo [!] Could not create the shortcut - start run.bat from the folder instead.
+echo.
+echo ================================================
+echo  DONE! Open "Stream Clipper" from your desktop.
+echo  First time: open Settings and set your language.
+echo ================================================
+pause
+exit /b 0
+:failed
+echo.
+echo [!] Setup stopped (see the message above). Fix it and run setup.bat again.
+pause
+exit /b 1
 
 REM ---------------------------------------------------------------
-REM  1) Python 3.12 (sau 3.11 / 3.13)
-REM ---------------------------------------------------------------
+:s_python
 set "PY="
 call :find_python
+if defined PY goto py_ok
+echo [*] Python not found. Downloading the official Python 3.12 (python.org, ~27 MB)...
+set "PYINST=%DL%\python-3.12.10-amd64.exe"
+"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%HELP%" -Action download -Url "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe" -Out "%PYINST%"
+if errorlevel 1 (echo [!] Could not download Python. Get it from https://www.python.org/downloads/release/python-31210/ and run setup again. & exit /b 1)
+echo [*] Installing Python 3.12 for your user only (no admin, 1-3 minutes)...
+start "" /wait "%PYINST%" /quiet InstallAllUsers=0 PrependPath=1 Include_launcher=1 InstallLauncherAllUsers=0 Include_test=0 Include_doc=0
+call :find_python
+if not defined PY (echo [!] Python was installed but I cannot find it. Run setup again, maybe after a restart. & exit /b 1)
+:py_ok
+echo [OK] Python: %PY%
+exit /b 0
+
+:s_ffmpeg
+if exist "%BIN%\ffmpeg.exe" if exist "%BIN%\ffprobe.exe" goto ff_ok
+echo [*] Downloading ffmpeg (gyan.dev, ~115 MB, with NVENC for NVIDIA cards)...
+set "FFZ=%DL%\ffmpeg.zip"
+"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%HELP%" -Action download -Url "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -Out "%FFZ%"
+if not errorlevel 1 goto ff_unzip
+echo [*] gyan.dev failed, trying GitHub (BtbN, ~200 MB)...
+"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%HELP%" -Action download -Url "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -Out "%FFZ%"
+if errorlevel 1 (echo [!] Could not download ffmpeg. Check your internet/antivirus. & exit /b 1)
+:ff_unzip
+"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%HELP%" -Action extract -Zip "%FFZ%" -Dest "%BIN%" -Names "ffmpeg.exe,ffprobe.exe"
+if errorlevel 1 (echo [!] Could not unpack ffmpeg. & exit /b 1)
+del /q "%FFZ%" >nul 2>nul
+:ff_ok
+echo [OK] ffmpeg: %BIN%\ffmpeg.exe
+exit /b 0
+
+:s_deno
+REM yt-dlp needs a JavaScript runtime for some YouTube streams
+if exist "%BIN%\deno.exe" goto deno_ok
+echo [*] Downloading Deno (GitHub, ~40 MB)...
+set "DZ=%DL%\deno.zip"
+"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%HELP%" -Action download -Url "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip" -Out "%DZ%"
+if errorlevel 1 goto deno_warn
+"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%HELP%" -Action extract -Zip "%DZ%" -Dest "%BIN%" -Names "deno.exe"
+if errorlevel 1 goto deno_warn
+del /q "%DZ%" >nul 2>nul
+:deno_ok
+echo [OK] Deno: %BIN%\deno.exe
+exit /b 0
+:deno_warn
+echo [!] Deno could not be downloaded. The app works, but YouTube may refuse some streams. Run setup again later.
+exit /b 0
+
+:s_venv
+call :find_python
+if not defined PY (echo [!] Python not found - run the python step first. & exit /b 1)
+if not exist "%VPY%" goto venv_make
+"%VPY%" -c "import sys" >nul 2>nul
+if not errorlevel 1 goto venv_ok
+echo [*] Broken .venv (different Python?) - recreating it...
+rmdir /s /q "%APP%.venv"
+:venv_make
+echo [*] Creating the Python environment (.venv)...
+"%PY%" -m venv "%APP%.venv"
+if errorlevel 1 (echo [!] Could not create .venv with %PY% & exit /b 1)
+:venv_ok
+exit /b 0
+
+:s_packages
+"%VPY%" -m pip install --upgrade pip
+"%VPY%" -m pip install -r "%APP%requirements.txt"
+if not errorlevel 1 exit /b 0
+echo [*] Retrying the package install once...
+"%VPY%" -m pip install -r "%APP%requirements.txt"
+if errorlevel 1 (echo [!] Installing the packages failed. Check your internet and run setup again. & exit /b 1)
+exit /b 0
+
+:s_browser
+echo [*] Installing the browser used for optional TikTok posting (Chromium)...
+"%VPY%" -m playwright install chromium
+if errorlevel 1 echo [!] Chromium was not installed - Google Chrome will be used if you have it.
+exit /b 0
+
+:s_model
+echo [*] Downloading the Whisper large-v3 model (~3 GB, only once)...
+"%VPY%" -c "from streamclip.util import setup_cuda_dlls; setup_cuda_dlls(); from faster_whisper import WhisperModel; WhisperModel('large-v3', device='cpu', compute_type='int8'); print('model OK')"
+if errorlevel 1 echo [!] The model was not downloaded now - it downloads automatically the first time it is needed.
+exit /b 0
+
+:s_check
+echo [*] Checking the graphics card (CUDA + NVENC)...
+"%VPY%" -c "from streamclip.util import setup_cuda_dlls; setup_cuda_dlls(); import ctranslate2; print('CUDA GPUs:', ctranslate2.get_cuda_device_count())"
+"%BIN%\ffmpeg.exe" -v error -f lavfi -i color=black:s=256x256:d=0.5 -c:v h264_nvenc -f null - >nul 2>nul
+if errorlevel 1 (echo [!] NVENC not available - the CPU will be used, slower) else (echo [OK] NVENC works)
+exit /b 0
+
+REM ===============================================================
+REM  Finding Python: registry, the usual folders, "py", "where python"
+REM ===============================================================
+:find_python
 if defined PY goto have_python
 
 echo [*] Nu gasesc Python pe PC. Descarc Python 3.12 oficial (python.org, ~27 MB)...
@@ -205,20 +335,3 @@ if errorlevel 1 exit /b 0
 set "PY=%~1"
 exit /b 0
 
-REM ===============================================================
-:fail_python_dl
-echo [!] Nu am putut descarca Python. Descarca-l manual de pe https://www.python.org/downloads/release/python-31210/
-echo     (Windows installer 64-bit), instaleaza-l, apoi ruleaza din nou setup.bat.
-pause & exit /b 1
-:fail_python
-echo [!] Python s-a instalat, dar nu-l gasesc. Ruleaza din nou setup.bat (poate e nevoie de o repornire a PC-ului).
-pause & exit /b 1
-:fail_ffmpeg
-echo [!] Nu am putut descarca ffmpeg. Verifica internetul/antivirusul si ruleaza din nou setup.bat.
-pause & exit /b 1
-:fail_venv
-echo [!] Nu pot crea mediul Python (.venv) cu %PY%
-pause & exit /b 1
-:fail_pip
-echo [!] Instalarea pachetelor a esuat (vezi mesajele de mai sus). Verifica internetul si ruleaza din nou setup.bat.
-pause & exit /b 1

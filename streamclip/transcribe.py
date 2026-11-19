@@ -6,6 +6,7 @@ correct comma-below letters (ș ț) and ă, so the burned captions are proper Ro
 """
 import re, threading, wave
 import numpy as np
+from . import progress
 from .util import cfg, log, setup_cuda_dlls
 
 _model = None
@@ -56,13 +57,24 @@ def load_wav(path):
         return np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768
 
 
-_busy = threading.Lock()        # one transcription at a time (channel watcher + "Generează clipuri" jobs share the GPU)
+_busy = threading.Lock()        # one transcription at a time (channel watcher + "Generate clips" jobs share the GPU)
 
 
 def transcribe(wav_path):
     """-> list of words {'w','s','e','p'} (p = probability) and list of segments {'s','e','t'}."""
-    with _busy:
+    if not _busy.acquire(blocking=False):
+        progress.stage("transcriere", 0, "aștept placa video (alt job transcrie acum)…")
+        _busy.acquire()
+    try:
+        progress.stage("transcriere", 0, "pornesc Whisper…")
         return _transcribe(wav_path)
+    finally:
+        _busy.release()
+
+
+def _mmss(t):
+    t = int(t or 0)
+    return f"{t // 60}:{t % 60:02d}"
 
 
 def _transcribe(wav_path):
@@ -72,13 +84,15 @@ def _transcribe(wav_path):
     ro = lang == "ro"
     keep = (lambda t: _NON_LATIN.sub("", fix_ro(t)).strip()) if ro else (lambda t: t.strip())
     restore = restore_diacritics if ro else (lambda t: t)
-    segs, _ = model().transcribe(
+    segs, info = model().transcribe(
         pcm, language=None if lang == "auto" else lang, task="transcribe", word_timestamps=True, beam_size=5,
         vad_filter=True, vad_parameters={"min_silence_duration_ms": 400, "speech_pad_ms": 200},
         condition_on_previous_text=False, initial_prompt=c.get("initial_prompt") or None,
         no_speech_threshold=0.6, compression_ratio_threshold=2.4)
     words, sents = [], []
+    total = float(getattr(info, "duration", 0) or len(pcm) / 16000) or 1.0
     for s in segs:
+        progress.pct(100 * s.end / total, detail=f"{_mmss(s.end)} / {_mmss(total)} audio")
         txt = keep(s.text)
         if not txt or HALLU.search(txt) or s.avg_logprob < -1.2:
             continue

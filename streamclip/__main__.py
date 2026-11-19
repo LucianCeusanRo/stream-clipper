@@ -75,6 +75,8 @@ def main():
     u = sub.add_parser("url"); u.add_argument("link")
     pt = sub.add_parser("post-test"); pt.add_argument("clip"); pt.add_argument("--caption")
     sub.add_parser("status")
+    upd = sub.add_parser("update"); upd.add_argument("--force", action="store_true")
+    sub.add_parser("version")
     stp = sub.add_parser("selftest"); stp.add_argument("--quick", action="store_true")
     a = ap.parse_args()
     if a.cmd == "app":
@@ -103,6 +105,10 @@ def main():
         print(tiktok.upload(Path(a.clip), cap))
     elif a.cmd == "selftest":
         from . import selftest; sys.exit(selftest.main(quick=a.quick))
+    elif a.cmd == "update":
+        from . import updater; sys.exit(updater.main_cli())
+    elif a.cmd == "version":
+        from . import updater; print(updater.local_version())
     elif a.cmd == "status":
         cmd_status()
 

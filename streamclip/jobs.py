@@ -2,7 +2,7 @@
 TikTok live replay - anything yt-dlp can read - or a video file on the PC). Runs next to the channel watcher."""
 import math, re, threading, time, uuid
 from pathlib import Path
-from . import db, pipeline
+from . import db, pipeline, progress
 from .util import DATA, cfg, ffprobe_duration, log, run, tool, ytdlp_opts
 
 JOBS = {}                     # id -> dict (shown in the app)
@@ -32,8 +32,13 @@ def submit(source, start=None, end=None, clips=5):
     source = (source or "").strip().strip('"')
     if not source:
         raise ValueError("lipește un link sau calea unui fișier")
-    if not (source.startswith("http") or is_local(source)):
-        raise ValueError("nu e un link (http...) și nici un fișier care există pe PC")
+    if not is_local(source):
+        if not source.lower().startswith("http"):
+            raise ValueError("nu e un link (http...) și nici un fișier care există pe PC")
+        from .util import check_url
+        source = check_url(source)
+    elif not re.search(r"\.(mp4|mkv|mov|webm|flv|ts|m4v|avi)$", source, re.I):
+        raise ValueError("fișierul trebuie să fie un video (mp4, mkv, mov, webm, flv, ts)")
     s, e = parse_time(start), parse_time(end)
     if s is not None and e is not None and e - s < 30:
         raise ValueError("intervalul trebuie să aibă cel puțin 30 de secunde")
@@ -61,6 +66,7 @@ def _ensure_worker():
 
 
 def _loop():
+    progress.bind("job")
     while True:
         with _cv:
             while not _q:

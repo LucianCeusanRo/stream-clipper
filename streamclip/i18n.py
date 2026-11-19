@@ -4,6 +4,28 @@ import re
 
 _RULES = [(re.compile(a, re.I), b) for a, b in [
     (r"^astept bucati noi$", "waiting for new chunks"),
+    (r"^pauză automată \(TikTok\) până la ", "auto pause (TikTok) until "),
+    (r"^pauză postare (\d+)h: ", r"posting paused \1h: "),
+    (r"^Auto-postare PORNITĂ \(ON\) \(Setări\)$", "Auto-post ON (Settings)"),
+    (r"^Auto-postare OPRITĂ \(OFF\) \(Setări\)$", "Auto-post OFF (Settings)"),
+    (r"^Auto-postare PORNITĂ \(ON\)", "Auto-post ON"),
+    (r"^Auto-postare OPRITĂ \(OFF\)", "Auto-post OFF"),
+    (r"^compilație TOP (\d+) gata \(clip #(\d+)\)$", r"TOP \1 compilation ready (clip #\2)"),
+    (r"^⬇️ Descarc bucata$", "⬇️ Downloading chunk"),
+    (r"^📝 Transcriere$", "📝 Transcribing"),
+    (r"^🔎 Detectez momentele$", "🔎 Finding moments"),
+    (r"^🤖 Verific cu AI$", "🤖 Checking with AI"),
+    (r"^🎬 Randez clipul$", "🎬 Rendering clip"),
+    (r"^📤 Postez pe TikTok$", "📤 Posting to TikTok"),
+    (r"^⏳ Aștept$", "⏳ Waiting"),
+    (r"^aștept placa video \(alt job transcrie acum\)…$", "waiting for the GPU (another job is transcribing)…"),
+    (r"^pornesc Whisper…$", "starting Whisper…"),
+    (r"^extrag sunetul…$", "extracting audio…"),
+    (r"^(\d+) cuvinte, caut momente amuzante…$", r"\1 words, looking for funny moments…"),
+    (r"^verific pe TikTok (\d+) postări întrerupte$", r"checking \1 interrupted posts on TikTok"),
+    (r"^normalizez volumul \(-14 LUFS\)$", "normalizing loudness (-14 LUFS)"),
+    (r"^randez clipurile…", "rendering clips…"),
+    (r"^(#\S+) nu a devenit hashtag clickabil \(doar text\) - nu am postat$", r"\1 did not become a clickable hashtag (plain text) - not posted"),
     (r"^procesez ", "processing "),
     (r"^postez ", "posting "),
     (r"^pauza$", "paused"),
@@ -53,3 +75,23 @@ def en(text):
     for rx, rep in _RULES:
         text = rx.sub(rep, text)
     return text
+
+
+DISPLAY_KEYS = ("label", "detail", "msg", "poster", "watcher", "worker", "error", "reason", "why")
+
+
+def deep_en(obj, keys=DISPLAY_KEYS):
+    """Translate only display texts (by key) inside nested dicts/lists. Internal codes the page compares
+    (stage names, statuses) are left alone. No-op when ui_language is "ro"."""
+    if not english():
+        return obj
+
+    def walk(o, key=None):
+        if isinstance(o, dict):
+            return {k: walk(v, k) for k, v in o.items()}
+        if isinstance(o, list):
+            return [walk(v, key) for v in o]
+        if isinstance(o, str) and key in keys:
+            return en(o)
+        return o
+    return walk(obj)

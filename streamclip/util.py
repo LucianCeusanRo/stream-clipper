@@ -5,7 +5,100 @@ os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
 from pathlib import Path
 
 ROOT = Path(os.environ.get("CLIPPER_HOME", Path(__file__).resolve().parent.parent))
-DATA = ROOT / "data"
+DATA_POINTER = ROOT / "data_location.txt"     # where the data folder lives (set from Settings); never in git/updates
+DATA_MOVE = ROOT / "data_move_pending.json"   # {"from": old, "to": new}: moved at the next start, before anything opens
+
+
+def _resolve_data():
+    if os.environ.get("CLIPPER_DATA"):
+        return Path(os.environ["CLIPPER_DATA"])
+    try:
+        p = DATA_POINTER.read_text(encoding="utf-8").strip()
+        if p and Path(Path(p).anchor or ".").exists():
+            return Path(p)
+    except OSError:
+        pass
+    return ROOT / "data"
+
+
+def _remap_db_paths(dbf, old, new):
+    """The db stores absolute file paths: point them at the new folder."""
+    import sqlite3
+    if not dbf.exists():
+        return
+    con = sqlite3.connect(str(dbf))
+    try:
+        for table, cols in (("clips", ("file", "thumb", "src")), ("chunks", ("path",))):
+            have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+            for col in cols:
+                if col in have:
+                    con.execute(f"UPDATE {table} SET {col} = ? || substr({col}, ?) WHERE {col} LIKE ? || '%'",
+                                (new, len(old) + 1, old))
+        con.commit()
+    finally:
+        con.close()
+
+
+def request_data_move(new_path, move=True):
+    """Validate the new data folder now; the move itself happens on the next start (nothing is open then)."""
+    p = Path(str(new_path).strip().strip('"'))
+    if not str(p) or not p.is_absolute():
+        raise ValueError("alege o cale completă, ex. D:\\StreamClipper\\data")
+    if not Path(p.anchor).exists():
+        raise ValueError(f"discul {p.anchor} nu există")
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+        t = p / ".clipper_write_test"
+        t.write_text("ok", encoding="utf-8"); t.unlink()
+    except OSError as e:
+        raise ValueError(f"nu pot scrie în {p}: {e}")
+    if p.resolve() == DATA.resolve():
+        raise ValueError("acesta e deja folderul de date")
+    try:
+        p.resolve().relative_to(DATA.resolve())
+        raise ValueError("folderul nou nu poate fi în interiorul celui vechi")
+    except ValueError as e:
+        if "interiorul" in str(e):
+            raise
+    free = shutil.disk_usage(p).free
+    used = sum(f.stat().st_size for f in DATA.rglob("*") if f.is_file()) if move and DATA.exists() else 0
+    if move and used > free * 0.95:
+        raise ValueError(f"nu e destul loc pe {p.anchor}: trebuie {used / 1e9:.1f} GB, liber {free / 1e9:.1f} GB")
+    if move:
+        DATA_MOVE.write_text(json.dumps({"from": str(DATA), "to": str(p)}), encoding="utf-8")
+    else:
+        DATA_POINTER.write_text(str(p), encoding="utf-8")
+    return {"path": str(p), "move": move, "size_gb": round(used / 1e9, 2), "free_gb": round(free / 1e9, 1)}
+
+
+def _do_pending_move():
+    """Runs at import (app not started yet): move data -> new folder, verify, then switch the pointer."""
+    if not DATA_MOVE.exists() or os.environ.get("CLIPPER_DATA"):
+        return
+    try:
+        j = json.loads(DATA_MOVE.read_text(encoding="utf-8"))
+        src, dst = Path(j["from"]), Path(j["to"])
+        dst.mkdir(parents=True, exist_ok=True)
+        if src.exists() and src.resolve() != dst.resolve():
+            for item in list(src.iterdir()):
+                target = dst / item.name
+                if target.exists():
+                    continue                      # never overwrite: keep what is already in the new folder
+                shutil.move(str(item), str(target))
+        _remap_db_paths(dst / "state.db", str(src), str(dst))
+        DATA_POINTER.write_text(str(dst), encoding="utf-8")
+        (dst / "MOVED_HERE.txt").write_text(f"Stream Clipper data was moved here from {src} at {time.ctime()}\n", encoding="utf-8")
+    except Exception as e:                        # keep the old location; the app shows the error
+        (ROOT / "data_move_error.txt").write_text(str(e), encoding="utf-8")
+    finally:
+        try:
+            DATA_MOVE.unlink()
+        except OSError:
+            pass
+
+
+_do_pending_move()
+DATA = _resolve_data()
 FONTS = Path(os.environ.get("CLIPPER_FONTS", ROOT / "fonts"))
 log = logging.getLogger("streamclip")
 
@@ -36,6 +129,9 @@ _cfg_stamp = None
 SETTINGS = DATA / "settings.json"     # changes made from the app (override config.yaml)
 
 
+LOCAL_CONFIG = ROOT / "config.local.yaml"   # your own hand edits; updates never touch it (nor data/settings.json)
+
+
 def _cfg_paths():
     if os.environ.get("CLIPPER_CONFIG"):
         return Path(os.environ["CLIPPER_CONFIG"]), SETTINGS
@@ -49,10 +145,16 @@ def cfg():
     """config.yaml + data/settings.json overrides; re-read automatically when either file changes."""
     global _cfg, _cfg_stamp
     p, sp = _cfg_paths()
-    stamp = tuple((f.stat().st_mtime_ns, f.stat().st_size) if f.exists() else 0 for f in (p, sp))
+    lp = LOCAL_CONFIG if "CLIPPER_CONFIG" not in os.environ else Path(str(p) + ".local-none")
+    stamp = tuple((f.stat().st_mtime_ns, f.stat().st_size) if f.exists() else 0 for f in (p, lp, sp))
     if _cfg is None or stamp != _cfg_stamp:
         import yaml
         c = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        if lp.exists():
+            try:
+                c.update(yaml.safe_load(lp.read_text(encoding="utf-8")) or {})
+            except Exception as e:
+                log.warning("config.local.yaml invalid, il ignor: %s", e)
         over = load_json(sp, {}) if sp.exists() else {}
         c.update(over or {})
         def _tags(lst):
@@ -85,6 +187,44 @@ def save_settings(changes):
 BIN = ROOT / "bin"            # setup.bat drops ffmpeg/ffprobe/deno here (no winget, no PATH changes needed)
 if BIN.is_dir() and str(BIN) not in os.environ.get("PATH", ""):
     os.environ["PATH"] = str(BIN) + os.pathsep + os.environ.get("PATH", "")   # yt-dlp finds deno.exe this way
+
+
+ALLOWED_HOSTS = ("youtube.com", "youtu.be", "kick.com", "twitch.tv", "tiktok.com")
+YOUTUBE_HOSTS = ("youtube.com", "youtu.be")
+
+
+def migrate_settings():
+    """One-time: settings saved by old versions contain the OLD default pace (30/day, 30-45 min) and
+    post_order best_first -> drop exactly those values so the new defaults (Normal 45/day, 20-30 min,
+    viral first) apply. Anything you changed yourself stays."""
+    cur = load_json(SETTINGS, None)
+    if not isinstance(cur, dict) or cur.get("_migrated", 0) >= 2:
+        return False
+    old = {"daily_post_cap": 30, "post_interval_min_minutes": 30, "post_interval_max_minutes": 45, "post_order": "best_first"}
+    for k, v in old.items():
+        if k in cur and cur[k] == v:
+            cur.pop(k)
+    cur["_migrated"] = 2
+    save_json(SETTINGS, cur)
+    global _cfg
+    _cfg = None
+    return True
+
+
+def check_url(url, youtube_only=False):
+    """Only plain https/http links to known stream sites reach yt-dlp (no options, no file://, no internal hosts)."""
+    from urllib.parse import urlparse
+    u = (url or "").strip()
+    if not u or any(ch.isspace() for ch in u) or u.startswith("-") or len(u) > 500:
+        raise ValueError("link invalid")
+    p = urlparse(u)
+    if p.scheme not in ("http", "https") or not p.hostname:
+        raise ValueError("linkul trebuie să înceapă cu https://")
+    host = p.hostname.lower()
+    allowed = YOUTUBE_HOSTS if youtube_only else ALLOWED_HOSTS
+    if not any(host == h or host.endswith("." + h) for h in allowed):
+        raise ValueError("accept doar linkuri de pe " + ", ".join(allowed))
+    return u
 
 
 def tool(name):
@@ -156,6 +296,30 @@ def spawn(cmd, **kw):
     return p
 
 
+def run_ffmpeg_progress(cmd, total_s, on_pct=None, timeout=1800):
+    """Run an ffmpeg command (cmd[0] = ffmpeg) and call on_pct(0..100) while it encodes (parses -progress)."""
+    import tempfile, threading
+    cmd = [str(cmd[0]), "-progress", "pipe:1", "-nostats", *[str(c) for c in cmd[1:]]]
+    err = tempfile.TemporaryFile()
+    p = spawn(cmd, stdout=subprocess.PIPE, stderr=err, stdin=subprocess.DEVNULL)
+    killer = threading.Timer(timeout, p.kill); killer.daemon = True; killer.start()
+    try:
+        for raw in p.stdout:
+            line = raw.decode("utf-8", "replace").strip()
+            if on_pct and total_s and line.startswith("out_time_us=") and line[12:].lstrip("-").isdigit():
+                try:
+                    on_pct(min(100.0, max(0.0, int(line[12:]) / 1e6 / total_s * 100)))
+                except Exception:
+                    pass
+        p.wait()
+    finally:
+        killer.cancel(); forget(p)
+    if p.returncode != 0:
+        err.seek(0)
+        raise RuntimeError(f"command failed ({p.returncode}): {' '.join(cmd)[:300]}\n{err.read().decode('utf-8', 'replace')[-1500:]}")
+    err.close()
+
+
 def _install_signal_handlers():
     import signal, threading
     if threading.current_thread() is not threading.main_thread():
@@ -225,14 +389,39 @@ def kill_stale_children():
 
 
 def save_json(path, obj):
-    Path(path).write_text(json.dumps(obj, ensure_ascii=False, indent=1), encoding="utf-8")
+    """Atomic: write a temp file, fsync, then replace (a crash never leaves a half-written settings file)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + f".tmp{os.getpid()}")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(obj, ensure_ascii=False, indent=1))
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass
+    for i in range(5):
+        try:
+            os.replace(tmp, path)
+            break
+        except PermissionError:          # Windows: a reader holds the file for a moment
+            time.sleep(0.1 * (i + 1))
+    else:
+        os.replace(tmp, path)
+    try:
+        shutil.copyfile(path, path.with_name(path.name + ".bak"))
+    except OSError:
+        pass
 
 
 def load_json(path, default=None):
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except Exception:
-        return default
+    """Corrupt/partial file -> falls back to the last good .bak copy, then to default."""
+    for p in (Path(path), Path(str(path) + ".bak")):
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+    return default
 
 
 def ffprobe_duration(path):

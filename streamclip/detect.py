@@ -111,6 +111,31 @@ def audio_features(pcm, sr=16000):
     return db, bright, laugh
 
 
+def hook_trim(s0, e0, peak, words, score, mn, mx, n):
+    """Hook-first: no dead air at the start (first word within 0.3 s), the payoff fully inside (keep >= 2 s after
+    the last strong peak), no long silence at the end. Never shorter than mn / longer than mx."""
+    inside = [w for w in words if s0 <= w["s"] < e0]
+    if inside:
+        first = inside[0]["s"]
+        if first - s0 > 0.8 and (e0 - (first - 0.3)) >= mn:
+            s0 = max(0.0, first - 0.3)
+    # last strong moment after the peak (laugh/yell reaction) must be followed by >= 2 s
+    lo, hi = int(peak), int(min(n, s0 + mx))
+    if hi > lo + 1:
+        seg = score[lo:hi]
+        strong = np.where(seg >= 0.7 * score[peak])[0]
+        if len(strong):
+            need = lo + int(strong[-1]) + 2.0
+            if need > e0:
+                e0 = min(need, s0 + mx, float(n))
+    tail = [w for w in words if s0 <= w["s"] < e0]
+    if tail:
+        last = tail[-1]["e"]
+        if e0 - last > 1.5 and (last + 0.8 - s0) >= mn:
+            e0 = last + 0.8
+    return round(s0, 2), round(min(e0, float(n)), 2)
+
+
 def find_moments(pcm, words, sents, chat, new_from, c):
     """pcm: 16 kHz mono of the analysis window; times are window-relative seconds.
     new_from: only peaks at/after this second are new (earlier part is pre-roll from previous chunk)."""
@@ -144,19 +169,26 @@ def find_moments(pcm, words, sents, chat, new_from, c):
     if len(chat) < n:
         chat = np.pad(chat, (0, n - len(chat)))
     chat_z = np.clip(z(smooth(chat, 8)), 0, None) if chat.any() else np.zeros(n)
+    # setup -> reaction: a question / short line followed 1-4 s later by laughter or a yell (the "punchline" shape)
+    react = np.zeros(n)
+    for s in sents:
+        e = int(s["e"])
+        if 0 <= e < n - 1:
+            after = max(float(laugh[e + 1: e + 5].max(initial=0)), float(loud[e + 1: e + 5].max(initial=0)) - 0.5)
+            if after > 0.8:
+                react[e: e + 4] += (1.3 if "?" in s["t"] else 0.8) * min(2.5, after)
     score = (1.0 * loud + 1.2 * smooth(yell, 3) + 1.3 * smooth(laugh, 4) + 0.9 * smooth(kw, 6)
-             + 0.4 * rate_z + (1.4 * smooth(chat_z, 3) if chat.any() else 0))
+             + 0.4 * rate_z + 0.7 * smooth(react, 3) + (1.4 * smooth(chat_z, 3) if chat.any() else 0))
     score = smooth(score, 5)
     # pick peaks
-    chosen = []
-    taken = np.zeros(n, dtype=bool)          # seconds already covered by a clip (+ gap)
+    picks, used = [], np.zeros(n, bool)
     tgt, mn, mx = c["clip_target_sec"], c["clip_min_sec"], c["clip_max_sec"]
     gap = c.get("min_gap_between_clips_sec", 20)
     starts = [s["s"] for s in sents]; ends = [s["e"] for s in sents]
     for p in np.argsort(-score):
-        if len(chosen) >= c["clips_per_chunk_max"] or score[p] < c["min_score"]:
+        if len(picks) >= c["clips_per_chunk_max"] or score[p] < c["min_score"]:
             break
-        if p < new_from or taken[max(0, p - 3): p + 3].any():
+        if p < new_from or used[max(0, p - 3): p + 3].any():
             continue
         s0 = max(0.0, p - 0.6 * tgt); e0 = min(float(n), p + 0.4 * tgt)
         # snap start to the beginning of a sentence (so the clip starts on a full phrase = hook)
@@ -169,15 +201,16 @@ def find_moments(pcm, words, sents, chat, new_from, c):
         e0 = min(max(e0, s0 + mn), s0 + mx, float(n))
         if e0 - s0 < mn:
             s0 = max(0.0, e0 - mn)
+        s0, e0 = hook_trim(s0, e0, p, words, score, mn, mx, n)
         nwords = sum(1 for w in words if s0 <= w["s"] < e0)
         strong_chat = chat.any() and chat_z[p] > 2
         if nwords < 0.9 * (e0 - s0) and not strong_chat:    # TikTok clips need talking; skip silent/mumble parts
-            taken[max(0, p - 3): p + 3] = True
+            used[max(0, p - 3): p + 3] = True
             continue
         a, b = int(max(0, s0 - gap)), int(min(n, e0 + gap))
-        if taken[int(s0):int(e0)].any():
+        if used[int(s0):int(e0)].any():
             continue
-        taken[a:b] = True
+        used[a:b] = True
         lo, hi = int(s0), int(e0)
         why = []
         if loud[p] > 1: why.append("strigat/spike volum")
@@ -188,9 +221,9 @@ def find_moments(pcm, words, sents, chat, new_from, c):
         cats = set().union(*cats_at[lo:hi]) if hi > lo else set()
         why += sorted(cats)
         if chat.any() and chat_z[p] > 1: why.append("chat explodeaza")
-        chosen.append({"start": round(s0, 2), "end": round(e0, 2), "peak": int(p), "score": round(float(score[p]), 2),
+        picks.append({"start": round(s0, 2), "end": round(e0, 2), "peak": int(p), "score": round(float(score[p]), 2),
                       "why": why or ["energie"], "cats": sorted(cats),
                       "feat": {"loud": round(float(loud[lo:hi].max()), 2), "laugh": round(float(laugh[lo:hi].max()), 2),
                                "chat_z": round(float(chat_z[lo:hi].max()), 2) if chat.any() else None, "nkw": len(cats)},
                       "text": " ".join(w["w"] for w in words if s0 <= w["s"] < e0)})
-    return sorted(chosen, key=lambda x: -x["score"])
+    return sorted(picks, key=lambda x: -x["score"])

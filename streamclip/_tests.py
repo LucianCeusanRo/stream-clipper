@@ -1,10 +1,10 @@
 """Automated tests (unittest). Run via `python -m streamclip selftest` (isolated temp CLIPPER_HOME)."""
-import random, re, json, os, shutil, subprocess, threading, time, unittest, urllib.request, wave
+import random, re, json, os, shutil, subprocess, sys, threading, time, unittest, urllib.error, urllib.request, wave
 from pathlib import Path
 import numpy as np
 
 assert os.environ.get("CLIPPER_HOME"), "run through `python -m streamclip selftest`"
-from streamclip import util, db, detect, render, transcribe, texts, pipeline, youtube, app, web, layout, tiktok, viral, effects, jobs  # noqa
+from streamclip import util, db, detect, render, transcribe, texts, pipeline, youtube, app, web, layout, tiktok, viral, effects, jobs, progress, styles, updater, facecam  # noqa
 
 QUICK = os.environ.get("CLIPPER_QUICK") == "1"
 # the tests use a clipping-campaign style required hashtag; T0 checks the default (none)
@@ -49,6 +49,12 @@ class T0NoRequiredTag(unittest.TestCase):
         cap = pipeline.build_caption("Moment tare 😂")
         self.assertNotIn("#mycampaign", cap); self.assertIn("#gta6", cap)
         self.assertEqual(texts.finalize_caption("a #fyp b"), "a b #fyp")
+
+    def test_required_tag_for_tiktok_check(self):
+        util.save_settings({"required_hashtag": ""})
+        self.assertEqual(tiktok.required_tag(), "")
+        util.save_settings({"required_hashtag": "MyCampaign"})
+        self.assertEqual(tiktok.required_tag(), "#mycampaign")
 
     def test_titles_use_configured_name(self):
         util.save_settings({"streamer_name": "Maria", "game": "GTA 6"})
@@ -238,7 +244,6 @@ class T5Render(unittest.TestCase):
             self._check(out)
 
     def test_stable_face_picks_the_static_one(self):
-        from streamclip import facecam
         cam = [10, 100, 60, 60, 0.9]                                  # webcam face: same place every frame
         dets = [[cam, [300 + 40 * i, 200, 50, 50, 0.8]] for i in range(8)]   # in-game face moves
         face, hits = facecam.stable_face(dets, 8)
@@ -246,6 +251,18 @@ class T5Render(unittest.TestCase):
         box = facecam.face_box(face, 960, 540)
         self.assertTrue(all(0 <= v <= 1 for v in box)); self.assertLessEqual(box[0] + box[2], 1.0001)
         self.assertEqual(facecam.stable_face([[], []], 2), (None, 0))
+
+    def test_two_people_on_one_webcam(self):
+        a, b = [100, 100, 60, 60, 0.9], [200, 105, 58, 58, 0.85]       # streamer + guest side by side
+        dets = [[a, b, [500 + 30 * i, 300, 40, 40, 0.8]] for i in range(8)]
+        faces = facecam.stable_faces(dets, 8)
+        self.assertEqual(len(faces), 2)
+        group = facecam.group_faces(faces[0][0], [f for f, _ in faces])
+        self.assertEqual(len(group), 2)
+        u = facecam.union(group)
+        self.assertLessEqual(u[0], 100); self.assertGreaterEqual(u[0] + u[2], 258)
+        self.assertAlmostEqual(facecam.iou([0, 0, 10, 10], [0, 0, 10, 10]), 1.0)
+        self.assertEqual(facecam.iou([0, 0, 10, 10], [20, 20, 5, 5]), 0.0)
 
     def test_layout_no_face_falls_back_to_blur(self):
         lay, box = layout.decide(str(self.src), 0, 20)
@@ -361,7 +378,7 @@ class T7Web(unittest.TestCase):
 
     def req(self, path, body=None):
         r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=json.dumps(body).encode() if body is not None else None,
-                                   headers={"Content-Type": "application/json"})
+                                   headers={"Content-Type": "application/json", "X-Clipper-Token": web.TOKEN})
         try:
             with urllib.request.urlopen(r, timeout=10) as resp:
                 return resp.status, json.loads(resp.read())
@@ -370,7 +387,7 @@ class T7Web(unittest.TestCase):
 
     def test_dashboard(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/", timeout=10) as r:
-            self.assertIn("Stream", r.read().decode("utf-8"))
+            self.assertIn("Stream Clipper", r.read().decode("utf-8"))
         code, st = self.req("/api/state"); self.assertEqual(code, 200); self.assertIn("watching", st)
         cid = db.add_clip(video_id="vidW", start=1, end=30, score=4, file=str(Path(util.DATA) / "w.mp4"), title="t", caption="t")
         code, lst = self.req("/api/clips?status=pending"); self.assertTrue(any(x["id"] == cid for x in lst))
@@ -592,6 +609,506 @@ class T12Jobs(unittest.TestCase):
             pipeline.process_chunk = orig
             util.save_settings({"chunk_minutes": 5})
 
+
+class T13Progress(unittest.TestCase):
+    def setUp(self):
+        progress.reset()
+
+    def test_channels_are_per_thread(self):
+        def job():
+            progress.bind("job"); progress.stage("transcriere", 10, "job")
+        progress.bind("watcher"); progress.stage("randare", 0, "clip 1/3", clip_n=1, clip_m=3)
+        t = threading.Thread(target=job); t.start(); t.join()
+        progress.pct(55)
+        ch = progress.snapshot()["channels"]
+        self.assertEqual(ch["watcher"]["stage"], "randare"); self.assertEqual(ch["watcher"]["pct"], 55)
+        self.assertEqual(ch["job"]["pct"], 10)
+        progress.bind(None)
+        progress.stage("x", 1)              # unbound thread: ignored, never crashes
+        self.assertNotIn(None, progress.snapshot()["channels"])
+
+    def test_speed_and_eta(self):
+        self.assertIsNone(progress.eta_catch_up(600))
+        progress.add_rate(300, 100)          # 3x realtime
+        self.assertAlmostEqual(progress.speed(), 3.0)
+        self.assertAlmostEqual(progress.eta_catch_up(600, live=True), 300)      # live grows 1x -> net 2x
+        self.assertAlmostEqual(progress.eta_catch_up(600, live=False), 200)
+        progress.reset(); progress.add_rate(100, 100)
+        self.assertIsNone(progress.eta_catch_up(600, live=True))                # 1x: never catches the live edge
+
+    def test_video_progress_math(self):
+        vid = "vidPROG"
+        db.upsert_video(vid, "Live test", "alex", time.time() - 3600, "live")
+        for a, st in ((0, "done"), (300, "done"), (600, "queued"), (900, "processing")):
+            db.add_chunk(vid, a, a + 300, f"/x/{a}.mp4", "dvr", status=st)
+        progress.add_rate(300, 60)
+        v = app.video_progress(vid, live=True)
+        self.assertAlmostEqual(v["total"], 3600, delta=3)
+        self.assertEqual(v["processed"], 600); self.assertEqual(v["downloaded"], 1200)
+        self.assertAlmostEqual(v["pct"], 16.7, delta=0.2)
+        self.assertEqual(v["chunks_queued"], 1)
+        self.assertAlmostEqual(v["eta"], 3000 / 4, delta=5)
+
+    def test_progress_api_and_auto_log(self):
+        p = app.progress_snapshot()
+        for k in ("videos", "stages", "queue", "session", "auto_post", "daily_cap", "min_viral"):
+            self.assertIn(k, p)
+        util.save_settings({"auto_post": False}); app.note_auto(False)
+        util.save_settings({"auto_post": True}); app.progress_snapshot()
+        self.assertTrue(any("Auto-postare PORNIT" in e["msg"] for e in progress.snapshot()["events"]))
+        util.save_settings({"auto_post": False}); app.progress_snapshot()
+
+    @unittest.skipUnless(HAS_FFMPEG, "ffmpeg")
+    def test_ffmpeg_progress_callback(self):
+        seen = []
+        out = Path(util.DATA) / "prog.mp4"
+        util.run_ffmpeg_progress(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=s=320x240:d=4", "-c:v", "libx264",
+                                  "-preset", "ultrafast", str(out)], 4.0, seen.append)
+        self.assertTrue(out.exists()); self.assertTrue(seen); self.assertGreater(max(seen), 50)
+        with self.assertRaises(RuntimeError):
+            util.run_ffmpeg_progress(["ffmpeg", "-v", "error", "-i", "/nu/exista.mp4", str(out)], 1.0)
+
+
+class T14PostOrder(unittest.TestCase):
+    def setUp(self):
+        db.x("UPDATE clips SET status='skipped' WHERE status IN ('pending','queued')")
+
+    def _c(self, viral, score=1.0, text=None, status="pending", style=None):
+        return db.add_clip(video_id="vidO", start=random.random() * 1e5, end=1e5 + 30, score=score, file="f", title="", caption="c",
+                           viral=viral, status=status, style=style,
+                           text=text or " ".join(random.sample(["a%d" % i for i in range(200)], 12)))
+
+    def test_viral_first_threshold_manual_first(self):
+        lo = self._c(35, score=99); mid = self._c(55, score=1); hi = self._c(80, score=0.5)
+        plan, below = db.post_plan("viral_first", auto=True, min_viral=40)
+        self.assertEqual([r["id"] for r in plan], [hi, mid])                 # viral %, not raw score
+        self.assertIn(lo, [r["id"] for r in below])                          # under the 40% threshold
+        self.assertEqual(db.next_clip_to_post(auto=True, min_viral=40)["id"], hi)
+        man = self._c(10, status="queued")
+        db.x("UPDATE clips SET queued_at=? WHERE id=?", (time.time(), man))
+        self.assertEqual(db.next_clip_to_post(auto=True, min_viral=40)["id"], man)   # your approval always wins
+        self.assertIsNone(db.next_clip_to_post(auto=False, min_viral=40) and None)
+        db.x("UPDATE clips SET status='skipped' WHERE id=?", (man,))
+        self.assertIsNone(db.next_clip_to_post(auto=False))
+
+    def test_near_duplicates_not_posted_twice(self):
+        t = "doamne nu se poate frate ce a facut asta e cel mai tare moment din tot live ul"
+        a = self._c(90, text=t); b = self._c(85, text=t + " haha")
+        plan, below = db.post_plan("viral_first", auto=True, min_viral=40)
+        ids = [r["id"] for r in plan]
+        self.assertIn(a, ids); self.assertNotIn(b, ids)
+        self.assertTrue(any(r["id"] == b and r["plan"] == "duplicat" for r in below))
+        self.assertTrue(db.similar(t, t.replace("frate", "frati")))
+        self.assertFalse(db.similar(t, "hai sa mergem la masina ca vine politia acum repede"))
+        self.assertEqual(db.similar_text_exists("vidO", t + " haha", None), b)
+
+    def test_disabled_style_not_auto_posted(self):
+        r = self._c(90, style="cringe")
+        util.save_settings({"styles": {"cringe": False}})
+        try:
+            self.assertNotIn(r, [x["id"] for x in db.post_plan(auto=True, min_viral=0)[0]])
+        finally:
+            util.save_settings({"styles": {"cringe": True}})
+
+    def test_sort_rows(self):
+        rows = [{"viral": 50, "created": 1, "dur": 30, "style": "rage"}, {"viral": 90, "created": 0, "dur": 20, "style": "fail"},
+                {"viral": 20, "created": 2, "dur": 50, "style": "rage"}]
+        self.assertEqual([r["viral"] for r in web.sort_rows(rows)], [90, 50, 20])
+        self.assertEqual([r["created"] for r in web.sort_rows(rows, "new")], [2, 1, 0])
+        self.assertEqual([r["created"] for r in web.sort_rows(rows, "old")], [0, 1, 2])
+        self.assertEqual([r["dur"] for r in web.sort_rows(rows, "dur")], [50, 30, 20])
+        self.assertEqual(len(web.sort_rows(rows, "viral", 40)), 2)
+        self.assertEqual(len(web.sort_rows(rows, "viral", 0, "rage")), 2)
+
+
+class T15CamLock(unittest.TestCase):
+    def test_box_sanity(self):
+        face = [0.05, 0.20, 0.03, 0.05]
+        self.assertTrue(layout.box_ok([0.0, 0.118, 0.238, 0.238], face))
+        self.assertFalse(layout.box_ok([0.036, 0.0, 0.195, 0.175], [0.10, 0.12, 0.10, 0.10]))   # half face at the edge
+        self.assertFalse(layout.box_ok([0.0, 0.1, 0.05, 0.3], face))                              # too narrow / tall
+        g = [face, [0.18, 0.21, 0.03, 0.05]]
+        self.assertFalse(layout.box_ok([0.0, 0.118, 0.15, 0.2], face, group=g))                   # guest cut off
+        self.assertTrue(layout.box_ok([0.0, 0.118, 0.238, 0.238], face, group=g))
+
+    def test_lock_needs_consensus_and_resists_jumps(self):
+        lk = layout.CamLock(None)
+        face = [0.05, 0.20, 0.03, 0.05]; good = [0.0, 0.118, 0.238, 0.238]; other = [0.30, 0.10, 0.25, 0.25]
+        self.assertEqual(lk.choose(face, good, good), ("split", [0.0, 0.118, 0.238, 0.238]))
+        lk.choose(face, good, good); lk.choose(face, good, good)
+        self.assertEqual(lk.locked, good)
+        jump = [0.036, 0.0, 0.195, 0.175]                    # the bad box from the real log
+        self.assertEqual(lk.choose(face, jump, good)[1], good)
+        far_face = [0.40, 0.15, 0.03, 0.05]
+        lay, box = lk.choose(far_face, other, good)         # one odd clip: don't move, don't crop wrong
+        self.assertEqual(lay, "blur"); self.assertEqual(lk.locked, good)
+        lk.choose(far_face, other, good); lk.choose(far_face, other, good)
+        self.assertIsNone(lk.locked)                         # real layout change after 3 clips -> re-vote
+
+    def test_group_crop_frames_everyone(self):
+        g = [[0.04, 0.23, 0.015, 0.034], [0.09, 0.24, 0.012, 0.025], [0.18, 0.23, 0.013, 0.029]]
+        b = layout.group_crop(g, 1280, 720)
+        for f in g:
+            self.assertTrue(b[0] <= f[0] and f[0] + f[2] <= b[0] + b[2] and b[1] <= f[1] and f[1] + f[3] <= b[1] + b[3])
+        self.assertTrue(layout.box_ok(b, g[0], 1280, 720, g))
+
+    def test_wide_cam_filter_fits_width(self):
+        v = render.video_filter("split", 1920, 1080, "/tmp/x.ass", [0.0, 0.10, 0.36, 0.15])
+        self.assertIn("boxblur", v)                          # wide (2 people) -> fit, never centre-crop the sides
+        v2 = render.video_filter("split", 1920, 1080, "/tmp/x.ass", [0.0, 0.118, 0.238, 0.238])
+        self.assertNotIn("[cbg]", v2)
+        self.assertIn("fontsdir='" + str(util.FONTS).replace("\\", "/").replace(":", "\\:"), v2)          # the folder, not the preset table
+
+
+class T16Backoff(unittest.TestCase):
+    def setUp(self):
+        app.clear_backoff(reset_level=True)
+        self._orig = tiktok.upload
+
+    def tearDown(self):
+        tiktok.upload = self._orig; app.clear_backoff(reset_level=True)
+
+    def test_warning_detection(self):
+        self.assertEqual(tiktok.find_warning("Upload\nYou're posting too fast. Try again later.\nOK"), "You're posting too fast. Try again later.")
+        self.assertIsNotNone(tiktok.find_warning("Postezi prea des. Încearcă din nou mai târziu."))
+        self.assertIsNone(tiktok.find_warning("Your video has been uploaded\nManage your posts"))
+
+    def test_backoff_escalates_and_blocks_posting(self):
+        tiktok.upload = lambda *a, **k: (False, "limitare TikTok: You're posting too fast", None)
+        f = Path(util.DATA) / "bo.mp4"; f.write_bytes(b"x")
+        cid = db.add_clip(video_id="vidB", start=5, end=35, score=1, file=str(f), title="", caption="x #mycampaign", status="queued")
+        self.assertFalse(app.post_one(db.q("SELECT * FROM clips WHERE id=?", (cid,), one=True)))
+        b = app.backoff(); self.assertEqual(b["level"], 0); self.assertGreater(b["until"], time.time() + 3500)
+        self.assertEqual(db.q("SELECT status FROM clips WHERE id=?", (cid,), one=True)["status"], "queued")   # kept, not failed
+        app.set_backoff("again"); self.assertEqual(app.backoff()["level"], 1)
+        self.assertGreater(app.backoff()["until"], time.time() + 7100)
+        self.assertIsNotNone(app.progress_snapshot()["backoff"])
+        app.clear_backoff(); self.assertIsNone(app.progress_snapshot()["backoff"])
+        db.x("UPDATE clips SET status='skipped' WHERE id=?", (cid,))
+
+    def test_caption_never_repeated(self):
+        calls = []
+        tiktok.upload = lambda p, cap, *a, **k: (calls.append(cap), (True, "postat", None))[1]
+        f = Path(util.DATA) / "rep.mp4"; f.write_bytes(b"x")
+        Path(f).with_suffix(".json").write_text(json.dumps({"words": [], "hook": "h", "title": "Titlu"}), encoding="utf-8")
+        cap = "Alex a luat-o razna #mycampaign #fyp"
+        a = db.add_clip(video_id="vidR", start=1, end=30, score=1, file=str(f), title="Titlu", caption=cap, status="queued")
+        app.post_one(db.q("SELECT * FROM clips WHERE id=?", (a,), one=True))
+        b = db.add_clip(video_id="vidR", start=100, end=130, score=1, file=str(f), title="Titlu", caption=cap, status="queued")
+        app.post_one(db.q("SELECT * FROM clips WHERE id=?", (b,), one=True))
+        self.assertEqual(len(calls), 2); self.assertNotEqual(calls[0], calls[1])
+        self.assertTrue(calls[1].split("#")[1].startswith("mycampaign"))
+
+
+class T17Persistence(unittest.TestCase):
+    def test_crash_during_posting_is_verified_not_reposted(self):
+        f = Path(util.DATA) / "v.mp4"; f.write_bytes(b"x")
+        cap = "Alex s-a enervat pe chat rau de tot #mycampaign"
+        a = db.add_clip(video_id="vidV", start=1, end=30, score=1, file=str(f), title="", caption=cap, status="posting")
+        b = db.add_clip(video_id="vidV", start=60, end=90, score=1, file=str(f), title="", caption="Alt clip fara nicio legatura aici #mycampaign", status="posting")
+        c2 = db.add_clip(video_id="vidV", start=120, end=150, score=1, file=str(f), title="", caption="Inca unul complet diferit acum #mycampaign", status="posting")
+        db._conn.close(); db._conn = None                      # simulated close / crash + restart
+        self.assertEqual({db.q("SELECT status FROM clips WHERE id=?", (i,), one=True)["status"] for i in (a, b, c2)}, {"verify"})
+        posts = [("https://www.tiktok.com/@x/video/1", "Alex s-a enervat pe chat rau de tot #mycampaign #fyp")]
+        app.verify_interrupted(posts)
+        self.assertEqual(db.q("SELECT status FROM clips WHERE id=?", (a,), one=True)["status"], "posted")
+        self.assertEqual(db.q("SELECT status FROM clips WHERE id=?", (b,), one=True)["status"], "queued")
+        db.x("UPDATE clips SET status='verify' WHERE id=?", (c2,))
+        orig = tiktok.recent_posts; tiktok.recent_posts = lambda n=15: None
+        try:
+            app.verify_interrupted()
+        finally:
+            tiktok.recent_posts = orig
+        self.assertEqual(db.q("SELECT status FROM clips WHERE id=?", (c2,), one=True)["status"], "unconfirmed")
+        db.x("UPDATE clips SET status='skipped' WHERE video_id='vidV'")
+
+    def test_processing_chunk_resumes(self):
+        cid = db.add_chunk("vidK", 0, 300, "/x.mp4", "dvr", status="processing")
+        db._conn.close(); db._conn = None
+        self.assertEqual(db.q("SELECT status FROM chunks WHERE id=?", (cid,), one=True)["status"], "queued")
+        db.finish_chunk(cid, "done")
+
+    def test_corrupt_db_restored_from_backup(self):
+        n = db.q("SELECT COUNT(*) n FROM clips", one=True)["n"]
+        db.backup()
+        db._conn.close(); db._conn = None
+        p = Path(util.DATA) / "state.db"
+        for ext in ("-wal", "-shm"):
+            Path(str(p) + ext).unlink(missing_ok=True)
+        p.write_bytes(b"this is not a database" * 100)
+        self.assertEqual(db.q("SELECT COUNT(*) n FROM clips", one=True)["n"], n)
+        self.assertTrue(list(Path(util.DATA).glob("state.db.corrupt-*")))
+
+    def test_json_atomic_and_bak(self):
+        p = Path(util.DATA) / "t.json"
+        util.save_json(p, {"a": 1}); util.save_json(p, {"a": 2})
+        p.write_text('{"a": 3', encoding="utf-8")              # half-written
+        self.assertEqual(util.load_json(p, {}), {"a": 2})
+
+    def test_settings_migration(self):
+        util.save_json(util.SETTINGS, dict(util.load_json(util.SETTINGS, {}), daily_post_cap=30, post_interval_min_minutes=30,
+                                           post_interval_max_minutes=45, post_order="best_first", hashtags_max=4, _migrated=0))
+        util._cfg = None
+        self.assertTrue(util.migrate_settings())
+        c = util.cfg()
+        self.assertEqual(c["daily_post_cap"], 45); self.assertEqual(c["post_interval_min_minutes"], 20)
+        self.assertEqual(c["hashtags_max"], 4)                 # your own choice stays
+        self.assertFalse(util.migrate_settings())
+
+
+class T18Security(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.port = 19000 + os.getpid() % 900
+        cls.srv = web.serve(cls.port)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def raw(self, path, body=None, headers=None):
+        r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=json.dumps(body).encode() if body is not None else None,
+                                   headers=dict({"Content-Type": "application/json"}, **(headers or {})))
+        try:
+            with urllib.request.urlopen(r, timeout=10) as resp:
+                return resp.status, resp.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
+
+    def test_binds_localhost_only(self):
+        self.assertEqual(self.srv.server_address[0], "127.0.0.1")
+
+    def test_csrf_token_required(self):
+        code, _ = self.raw("/api/control", {"action": "stop"}); self.assertEqual(code, 403)
+        code, _ = self.raw("/api/control", {"action": "stop"}, {"X-Clipper-Token": "gresit"}); self.assertEqual(code, 403)
+        code, _ = self.raw("/api/control", {"action": "stop"}, {"X-Clipper-Token": web.TOKEN, "Origin": "https://evil.example"})
+        self.assertEqual(code, 403)
+        self.assertTrue(app.WATCHING.is_set())
+        code, page = self.raw("/")
+        self.assertIn(web.TOKEN.encode(), page)                # the real page gets the token
+
+    def test_host_header_and_traversal(self):
+        code, _ = self.raw("/api/state", headers={"Host": "evil.example:80"}); self.assertEqual(code, 403)
+        code, _ = self.raw("/static/../../streamclip/util.py"); self.assertEqual(code, 404)
+        code, _ = self.raw("/static/..%2F..%2Fconfig.yaml"); self.assertEqual(code, 404)
+        outside = db.add_clip(video_id="vidS", start=1, end=2, score=0, file="/etc/passwd", title="", caption="", status="skipped")
+        code, _ = self.raw(f"/media/{outside}/video"); self.assertEqual(code, 403)
+        code, _ = self.raw("/media/abc/video"); self.assertEqual(code, 400)
+
+    def test_url_validation(self):
+        for bad in ("file:///etc/passwd", "--exec rm", "http://127.0.0.1:8777/x", "https://evil.com/watch?v=1", "javascript:alert(1)"):
+            with self.assertRaises(ValueError):
+                util.check_url(bad)
+        self.assertTrue(util.check_url("https://www.youtube.com/watch?v=sigWeXgcJjI", youtube_only=True))
+        self.assertTrue(util.check_url("https://kick.com/alex"))
+        with self.assertRaises(ValueError):
+            util.check_url("https://kick.com/alex", youtube_only=True)
+        with self.assertRaises(ValueError):
+            jobs.submit("https://evil.com/x.mp4")
+
+    def test_ass_escaping(self):
+        a = render.build_ass([{"w": "{\\pos(1,1)}hack", "s": 0.1, "e": 0.5}], 3, "TITLU {\\fs999} ȘȚ", "blur")
+        self.assertNotIn("{\\fs999}", a); self.assertNotIn("{\\pos(1,1)}hack", a); self.assertIn("ȘȚ", a)
+        if HAS_FFMPEG:                                     # paths with spaces and apostrophes (D:\Alex's clips\...)
+            d = Path(util.DATA) / "dir cu spatii si ap'ostrof"; d.mkdir(exist_ok=True)
+            ass = d / "t.ass"; ass.write_text(a, encoding="utf-8")
+            r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=1080x1920:d=1", "-filter_complex",
+                                render.subs_tail("[0:v]", ass, pre=""), "-map", "[vo]", "-frames:v", "1", str(d / "o.jpg")],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr[-300:])
+
+
+class T19Updater(unittest.TestCase):
+    def _zip(self, files, top="stream-clipper"):
+        import io, zipfile
+        b = io.BytesIO()
+        with zipfile.ZipFile(b, "w") as z:
+            for k, v in files.items():
+                z.writestr(f"{top}/{k}", v)
+        return b.getvalue()
+
+    def _root(self):
+        r = Path(util.DATA) / f"upd{time.time_ns()}"
+        (r / "streamclip").mkdir(parents=True)
+        (r / "version.txt").write_text("1.0.0"); (r / "streamclip" / "__main__.py").write_text("old")
+        (r / "requirements.txt").write_text("pyyaml\n"); (r / ".env").write_text("LLM_API_KEY=secret")
+        (r / "data").mkdir(); (r / "data" / "state.db").write_text("db")
+        (r / "config.local.yaml").write_text("x: 1")
+        return r
+
+    def test_versions(self):
+        self.assertGreater(updater.vtuple("1.10.0"), updater.vtuple("1.9.9"))
+        self.assertEqual(updater.vtuple("v2"), (2, 0, 0))
+
+    def test_apply_keeps_user_files(self):
+        r = self._root()
+        files = updater._extract(self._zip({"version.txt": "1.2.0", "streamclip/__main__.py": "new", "streamclip/new.py": "x",
+                                            "requirements.txt": "pyyaml\n", ".env": "HACKED", "data/state.db": "HACKED",
+                                            "config.local.yaml": "HACKED", "weird_top/file": "ignored"}))
+        old, new = updater.apply(files, r, log_fn=lambda m: None, pip=False, smoke=False)
+        self.assertEqual((old, new), ("1.0.0", "1.2.0"))
+        self.assertEqual((r / "streamclip" / "__main__.py").read_text(), "new")
+        self.assertEqual((r / ".env").read_text(), "LLM_API_KEY=secret")
+        self.assertEqual((r / "data" / "state.db").read_text(), "db")
+        self.assertEqual((r / "config.local.yaml").read_text(), "x: 1")
+        self.assertFalse((r / "weird_top").exists())
+        self.assertTrue(list((r / "data" / "backups").glob("code_1.0.0_*.zip")))
+
+    def test_rollback_on_failure(self):
+        r = self._root()
+        files = updater._extract(self._zip({"version.txt": "1.3.0", "streamclip/__main__.py": "broken", "streamclip/added.py": "x"}))
+        orig = updater._venv_python
+        updater._venv_python = lambda root: sys.executable
+        try:
+            with self.assertRaises(RuntimeError):
+                updater.apply(files, r, log_fn=lambda m: None, pip=False, smoke=True)   # 'import streamclip.app' fails there
+        finally:
+            updater._venv_python = orig
+        self.assertEqual((r / "streamclip" / "__main__.py").read_text(), "old")
+        self.assertEqual((r / "version.txt").read_text(), "1.0.0")
+        self.assertFalse((r / "streamclip" / "added.py").exists())
+
+    def test_rejects_bad_archives(self):
+        with self.assertRaises(RuntimeError):
+            updater._extract(self._two_tops())
+        with self.assertRaises(RuntimeError):
+            updater._extract(self._zip({"../evil": "x"}))
+        with self.assertRaises(RuntimeError):
+            updater.apply({Path("README.md"): b"x"}, self._root(), log_fn=lambda m: None, pip=False, smoke=False)
+        self.assertEqual(updater.repo(), "LucianCeusanRo/stream-clipper")
+
+    def test_config_yaml_never_overwritten(self):
+        r = self._root(); (r / "config.yaml").write_text("mine: 1")
+        files = updater._extract(self._zip({"version.txt": "1.2.1", "streamclip/__main__.py": "new", "config.yaml": "HACKED"}))
+        updater.apply(files, r, log_fn=lambda m: None, pip=False, smoke=False)
+        self.assertEqual((r / "config.yaml").read_text(), "mine: 1")
+
+    def test_checksum_must_match(self):
+        import hashlib
+        z = self._zip({"version.txt": "1.2.1", "streamclip/__main__.py": "x"})
+        good = hashlib.sha256(z).hexdigest()
+        self.assertEqual(updater.verify(z, f"{good}  StreamClipper-update-v1.2.1.zip\n", "StreamClipper-update-v1.2.1.zip"), good)
+        with self.assertRaises(RuntimeError):
+            updater.verify(z + b"tampered", f"{good}  StreamClipper-update-v1.2.1.zip\n", "StreamClipper-update-v1.2.1.zip")
+        with self.assertRaises(RuntimeError):
+            updater.verify(z, f"{good}  other.zip\n", "StreamClipper-update-v1.2.1.zip")
+
+    def test_only_official_release_assets(self):
+        base = "https://github.com/LucianCeusanRo/stream-clipper/releases/download/v1.3.0/"
+        rel = {"tag_name": "v1.3.0", "body": "notes", "html_url": "x", "assets": [
+            {"name": "StreamClipper-update-v1.3.0.zip", "browser_download_url": base + "StreamClipper-update-v1.3.0.zip"},
+            {"name": "SHA256SUMS.txt", "browser_download_url": base + "SHA256SUMS.txt"}]}
+        orig = updater._get
+        try:
+            updater._get = lambda url, **k: json.dumps(rel).encode()
+            self.assertEqual(updater.latest_release()["version"], "1.3.0")
+            rel["assets"][0]["browser_download_url"] = "https://evil.example.com/StreamClipper-update-v1.3.0.zip"
+            with self.assertRaises(RuntimeError):
+                updater.latest_release()
+        finally:
+            updater._get = orig
+        self.assertFalse(updater._host_ok("http://github.com/x"))
+        self.assertFalse(updater._host_ok("https://github.com.evil.io/x"))
+        self.assertTrue(updater._host_ok("https://objects.githubusercontent.com/x"))
+
+    def test_startup_offline_starts_current_version(self):
+        orig = updater.latest_release
+        seen = []
+        try:
+            def boom(*a, **k):
+                raise OSError("no network")
+            updater.latest_release = boom
+            self.assertEqual(updater.startup_update(lambda m, p: seen.append(p)), "skipped")
+            util.save_settings({"auto_update": False})
+            self.assertEqual(updater.startup_update(), "skipped")
+        finally:
+            updater.latest_release = orig
+            util.save_settings({"auto_update": True})
+        self.assertEqual(seen[-1], 100)
+
+    def _two_tops(self):
+        import io, zipfile
+        b = io.BytesIO()
+        with zipfile.ZipFile(b, "w") as z:
+            z.writestr("a/version.txt", "1"); z.writestr("b/x", "2")
+        return b.getvalue()
+
+
+class T20DataAndStyles(unittest.TestCase):
+    def test_data_move_validation_and_remap(self):
+        with self.assertRaises(ValueError):
+            util.request_data_move("relativ/cale")
+        with self.assertRaises(ValueError):
+            util.request_data_move(str(util.DATA))
+        with self.assertRaises(ValueError):
+            util.request_data_move(str(Path(util.DATA) / "sub"))
+        src = Path(util.DATA) / "mvsrc"; dst = Path(util.DATA).parent / f"mvdst{time.time_ns()}"
+        (src / "clips").mkdir(parents=True)
+        (src / "clips" / "a.mp4").write_bytes(b"v")
+        import sqlite3
+        c = sqlite3.connect(src / "state.db")
+        c.execute("CREATE TABLE clips (id INTEGER, file TEXT, thumb TEXT, src TEXT)"); c.execute("CREATE TABLE chunks (id INTEGER, path TEXT)")
+        c.execute("INSERT INTO clips VALUES (1, ?, NULL, NULL)", (str(src / "clips" / "a.mp4"),)); c.commit(); c.close()
+        util.DATA_MOVE.write_text(json.dumps({"from": str(src), "to": str(dst)}), encoding="utf-8")
+        try:
+            util._do_pending_move()
+            self.assertTrue((dst / "clips" / "a.mp4").exists()); self.assertFalse((src / "clips").exists())
+            c = sqlite3.connect(dst / "state.db")
+            self.assertEqual(c.execute("SELECT file FROM clips").fetchone()[0], str(dst / "clips" / "a.mp4")); c.close()
+            self.assertEqual(util.DATA_POINTER.read_text().strip(), str(dst))
+        finally:
+            util.DATA_POINTER.unlink(missing_ok=True)
+
+    def test_janitor_budget_and_skipped(self):
+        f = Path(util.DATA) / "clips" / "old_skipped.mp4"; f.parent.mkdir(parents=True, exist_ok=True); f.write_bytes(b"x" * 1000)
+        cid = db.add_clip(video_id="vidJ", start=1, end=30, score=1, file=str(f), title="", caption="", status="skipped",
+                          created=time.time() - 10 * 86400)
+        util.save_settings({"skipped_retention_days": 7})
+        pipeline.janitor()
+        self.assertFalse(f.exists())
+        self.assertEqual(db.q("SELECT status FROM clips WHERE id=?", (cid,), one=True)["status"], "skipped")   # row kept
+
+    def test_categorize(self):
+        self.assertEqual(styles.categorize("ce pula mea ma enervez", ["injuratura"], {"loud": 3})[0], "rage")
+        self.assertEqual(styles.categorize("am murit iar am ratat", [], {})[0], "fail")
+        self.assertEqual(styles.categorize("castigatorul giveaway ia un ps5", ["giveaway"], {})[0], "giveaway")
+        self.assertEqual(styles.categorize("mersi pentru donatie chat ce ziceti", [], {"chat_z": 2})[0], "chat")
+        self.assertEqual(styles.categorize("hahaha esti un fraier", ["ras"], {})[0], "roast")
+        self.assertEqual(styles.categorize("hai", [], {})[0], "moment")
+        self.assertEqual(len(styles.stats()), len(styles.CATEGORIES))
+
+    def test_hook_trim(self):
+        words = [{"w": "x", "s": 5.0 + i * 0.5, "e": 5.3 + i * 0.5} for i in range(30)]
+        score = np.zeros(60); score[12] = 5; score[24] = 4
+        s0, e0 = detect.hook_trim(2.0, 30.0, 12, words, score, 20, 60, 60)
+        self.assertAlmostEqual(s0, 4.7, delta=0.01)                 # no dead air at the start
+        self.assertGreaterEqual(e0, 26.0)                            # payoff at 24 s kept + 2 s
+
+
+
+class T21RealRowChunk(unittest.TestCase):
+    """Regresie: worker-ul primeste sqlite3.Row (nu dict) din db.next_chunk()."""
+    def test_process_chunk_accepts_sqlite_row(self):
+        from streamclip import pipeline, progress as pr
+        db.upsert_video("rowvid", "t", "z", time.time(), "vod")
+        db.add_chunk("rowvid", 0, 60, "/nu/exista.mp4", "vod")
+        ch = None
+        for _ in range(50):
+            r = db.next_chunk()
+            if r is None: break
+            if r["video_id"] == "rowvid": ch = r; break
+        self.assertIsNotNone(ch)
+        self.assertFalse(isinstance(ch, dict))
+        class Stop(Exception): pass
+        ow, os_ = pipeline._window, pr.stage
+        pipeline._window = lambda c: ("/nu/exista.mp4", 0.0, 0.0, None)
+        def boom(*a, **k): raise Stop()
+        pr.stage = boom
+        try:
+            with self.assertRaises(Stop):
+                pipeline.process_chunk(ch)
+        finally:
+            pipeline._window, pr.stage = ow, os_
 
 if __name__ == "__main__":
     unittest.main()
