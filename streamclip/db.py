@@ -90,7 +90,7 @@ def conn():
                                   ("clips", "url", "TEXT"), ("clips", "hook", "TEXT"), ("clips", "layout", "TEXT"), ("clips", "queued_at", "REAL"),
                                   ("clips", "viral", "INTEGER"), ("clips", "factors", "TEXT"), ("clips", "cat", "TEXT"),
                                   ("clips", "src", "TEXT"), ("clips", "version", "INTEGER DEFAULT 1"),
-                                  ("clips", "style", "TEXT"), ("clips", "styles", "TEXT")):
+                                  ("clips", "style", "TEXT"), ("clips", "styles", "TEXT"), ("clips", "account", "TEXT")):
                 try:
                     _conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typ}")
                 except sqlite3.OperationalError:
@@ -288,10 +288,41 @@ def next_clip_to_post(order="viral_first", auto=False, min_viral=40):
     return plan[0] if plan else None
 
 
-def posts_since(ts):
-    return q("SELECT COUNT(*) n FROM clips WHERE status='posted' AND posted_at>=?", (ts,), one=True)["n"]
+def posts_since(ts, account=None):
+    if account is None:
+        return q("SELECT COUNT(*) n FROM clips WHERE status='posted' AND posted_at>=?", (ts,), one=True)["n"]
+    return q("SELECT COUNT(*) n FROM clips WHERE status='posted' AND posted_at>=? AND COALESCE(account,'main')=?",
+             (ts, account), one=True)["n"]
 
 
-def last_post_time():
-    r = q("SELECT MAX(posted_at) t FROM clips WHERE status='posted'", one=True)
+def last_post_time(account=None):
+    if account is None:
+        r = q("SELECT MAX(posted_at) t FROM clips WHERE status='posted'", one=True)
+    else:
+        r = q("SELECT MAX(posted_at) t FROM clips WHERE status='posted' AND COALESCE(account,'main')=?", (account,), one=True)
     return r["t"] or 0
+
+
+def account_stats(since):
+    """{account: {"today": n, "last": ts}} for posted clips (no account recorded = 'main')."""
+    out = {}
+    for r in q("SELECT COALESCE(account,'main') a, COUNT(CASE WHEN posted_at>=? THEN 1 END) n, MAX(posted_at) t "
+               "FROM clips WHERE status='posted' GROUP BY COALESCE(account,'main')", (since,)):
+        out[r["a"]] = {"today": r["n"], "last": r["t"] or 0}
+    return out
+
+
+def clone_clip(cid, account):
+    """'Also post to another account': a copy of the clip row targeted at that account, queued."""
+    r = q("SELECT * FROM clips WHERE id=?", (cid,), one=True)
+    if not r:
+        raise ValueError("clip inexistent")
+    d = {k: r[k] for k in r.keys() if k not in ("id", "status", "posted_at", "url", "error", "attempts", "queued_at")}
+    if d.get("file") and os.path.exists(d["file"]):            # own copy: cleanup of one never breaks the other
+        base, ext = os.path.splitext(d["file"])
+        dst = f"{base}_{account}{ext}"
+        if not os.path.exists(dst):
+            shutil.copyfile(d["file"], dst)
+        d["file"] = dst
+    d.update(account=account, status="queued", queued_at=time.time(), created=time.time())
+    return add_clip(**d)

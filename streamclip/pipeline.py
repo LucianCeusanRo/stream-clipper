@@ -1,5 +1,6 @@
 """Chunk -> moments -> rendered clips (registered in the DB, queued for posting)."""
-import random, re, time
+import random, re, threading, time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import numpy as np
 import json
@@ -123,6 +124,60 @@ def process_chunk(chunk, overrides=None):
         progress.stage("detectare", None, f"{len(words)} cuvinte, caut momente amuzante…")
         cands = detect.find_moments(pcm, words, sents, chat, preroll, c)
         use_llm = c.get("use_llm", True) and llm.available()
+        ch = progress.channel() if hasattr(progress, "channel") else None
+        _made_lock = threading.Lock()
+
+        def _render_one(job):
+            nonlocal made
+            if pool and ch:
+                progress.bind(ch)                # render threads report to the same progress line
+            i, cand, wrel, hook, title, caption = job["i"], job["cand"], job["wrel"], job["hook"], job["title"], job["caption"]
+            score, cat, llm_sc, style, style_all = job["score"], job["cat"], job["llm_sc"], job["style"], job["style_all"]
+            s_abs, e_abs = job["s_abs"], job["e_abs"]
+            CLIPS.mkdir(parents=True, exist_ok=True)
+            out = CLIPS / f"{vid}_{hms(s_abs)}.mp4"
+            t = time.time()
+            progress.stage("randare", 0, f"clip {i}/{len(cands)} [{hms(s_abs)}] · {cand['end'] - cand['start']:.0f}s",
+                           clip_n=i, clip_m=len(cands))
+            lay, box = layout.decide(src, cand["start"], cand["end"], key=vid)
+            peak_rel = cand.get("peak", cand["start"]) - cand["start"]
+            hs = float(c.get("hook_seconds", 2.5))
+            extra = {"ziua": series_day(v, s_abs, c)}
+            if peak_rel > hs + 4.5:                              # payoff comes late -> "STAI AȘA…" tease
+                extra["wait_for_it"] = (hs + 0.2, min(peak_rel - 0.6, hs + 3.0))
+            render.render(src, cand["start"], cand["end"], wrel, hook, out, lay, box, extra=extra)
+            log.info("  CLIP %s [%s] (%.0fs, scor %.1f, %s) randat in %.0fs -> %s", hms(s_abs), lay, cand["end"] - cand["start"],
+                     score, ", ".join(cand["why"]), time.time() - t, out.name)
+            thumb = out.with_suffix(".jpg")
+            try:
+                run([tool("ffmpeg"), "-y", "-v", "error", "-ss", "1.5", "-i", out, "-frames:v", "1", "-vf", "scale=360:-2", thumb])
+            except Exception:
+                thumb = None
+            status = "pending"          # waits for your review in the app (or auto-post, if ON)
+            feat = cand.get("feat") or {}
+            vpct, vfac = viral.compute(feat, cand["end"] - cand["start"], hook.startswith(("„", "\u201c")), cat,
+                                       sum(1 for w in wrel if w["s"] < 2), llm_sc)
+            srcf, ps, pe = save_source(src, cand["start"], cand["end"], dur, out)
+            db.add_clip(video_id=vid, start=s_abs, end=e_abs, score=score, file=str(out), title=title,
+                        caption=caption, text=" ".join(w["w"] for w in wrel), why=", ".join(cand["why"]),
+                        thumb=str(thumb) if thumb else None, hook=hook, layout=lay, status=status,
+                        viral=vpct, factors=json.dumps(vfac), cat=cat, src=str(srcf) if srcf else None,
+                        style=style, styles=",".join(style_all))
+            save_json(out.with_suffix(".json"), {
+                "video": vid, "start": s_abs, "end": e_abs, "score": score, "hook": hook, "title": title, "cat": cat,
+                "layout": lay, "cam_box": box, "caption": caption, "why": cand["why"], "words": wrel,
+                "feat": feat, "llm": llm_sc, "viral": vpct, "factors": vfac,
+                # for re-cutting: position of the clip inside the saved source, and the transcript around it
+                "src_abs0": win_t0 + ps, "src_s": cand["start"] - ps, "src_e": cand["end"] - ps, "src_dur": pe - ps,
+                "src_words": [dict(w, s=round(w["s"] - ps, 2), e=round(w["e"] - ps, 2)) for w in words if ps <= w["s"] < pe],
+                "src_sents": [dict(x, s=round(x["s"] - ps, 2), e=round(x["e"] - ps, 2)) for x in sents if x["e"] > ps and x["s"] < pe]})
+            with _made_lock:
+                made += 1
+            progress.count("made")
+
+        npar = max(1, min(4, int(c.get("max_parallel_renders", 1) or 1)))
+        pool = ThreadPoolExecutor(npar, thread_name_prefix="render") if npar > 1 else None
+        futs = []
         progress.update(clip_n=0, clip_m=len(cands))
         for i, cand in enumerate(cands, 1):
             s_abs, e_abs = win_t0 + cand["start"], win_t0 + cand["end"]
@@ -171,50 +226,33 @@ def process_chunk(chunk, overrides=None):
                     hook = (j.get("hook") or hook).strip()
                     title = (j.get("titlu") or title).strip()
             caption = build_caption(title)
-            CLIPS.mkdir(parents=True, exist_ok=True)
-            out = CLIPS / f"{vid}_{hms(s_abs)}.mp4"
-            t = time.time()
-            progress.stage("randare", 0, f"clip {i}/{len(cands)} [{hms(s_abs)}] · {cand['end'] - cand['start']:.0f}s",
-                           clip_n=i, clip_m=len(cands))
-            lay, box = layout.decide(src, cand["start"], cand["end"], key=vid)
-            peak_rel = cand.get("peak", cand["start"]) - cand["start"]
-            hs = float(c.get("hook_seconds", 2.5))
-            extra = {"ziua": series_day(v, s_abs, c)}
-            if peak_rel > hs + 4.5:                              # payoff comes late -> "STAI AȘA…" tease
-                extra["wait_for_it"] = (hs + 0.2, min(peak_rel - 0.6, hs + 3.0))
-            render.render(src, cand["start"], cand["end"], wrel, hook, out, lay, box, extra=extra)
-            log.info("  CLIP %s [%s] (%.0fs, scor %.1f, %s) randat in %.0fs -> %s", hms(s_abs), lay, cand["end"] - cand["start"],
-                     score, ", ".join(cand["why"]), time.time() - t, out.name)
-            thumb = out.with_suffix(".jpg")
-            try:
-                run([tool("ffmpeg"), "-y", "-v", "error", "-ss", "1.5", "-i", out, "-frames:v", "1", "-vf", "scale=360:-2", thumb])
-            except Exception:
-                thumb = None
-            status = "pending"          # waits for your review in the app (or auto-post, if ON)
-            feat = cand.get("feat") or {}
-            vpct, vfac = viral.compute(feat, cand["end"] - cand["start"], hook.startswith(("„", "\u201c")), cat,
-                                       sum(1 for w in wrel if w["s"] < 2), llm_sc)
-            srcf, ps, pe = save_source(src, cand["start"], cand["end"], dur, out)
-            db.add_clip(video_id=vid, start=s_abs, end=e_abs, score=score, file=str(out), title=title,
-                        caption=caption, text=" ".join(w["w"] for w in wrel), why=", ".join(cand["why"]),
-                        thumb=str(thumb) if thumb else None, hook=hook, layout=lay, status=status,
-                        viral=vpct, factors=json.dumps(vfac), cat=cat, src=str(srcf) if srcf else None,
-                        style=style, styles=",".join(style_all))
-            save_json(out.with_suffix(".json"), {
-                "video": vid, "start": s_abs, "end": e_abs, "score": score, "hook": hook, "title": title, "cat": cat,
-                "layout": lay, "cam_box": box, "caption": caption, "why": cand["why"], "words": wrel,
-                "feat": feat, "llm": llm_sc, "viral": vpct, "factors": vfac,
-                # for re-cutting: position of the clip inside the saved source, and the transcript around it
-                "src_abs0": win_t0 + ps, "src_s": cand["start"] - ps, "src_e": cand["end"] - ps, "src_dur": pe - ps,
-                "src_words": [dict(w, s=round(w["s"] - ps, 2), e=round(w["e"] - ps, 2)) for w in words if ps <= w["s"] < pe],
-                "src_sents": [dict(x, s=round(x["s"] - ps, 2), e=round(x["e"] - ps, 2)) for x in sents if x["e"] > ps and x["s"] < pe]})
-            made += 1
-            progress.count("made")
+            job = dict(i=i, cand=cand, wrel=wrel, hook=hook, title=title, caption=caption, score=score, cat=cat,
+                       llm_sc=llm_sc, style=style, style_all=style_all, s_abs=s_abs, e_abs=e_abs)
+            if pool:
+                futs.append(pool.submit(_render_one, job))
+            else:
+                _render_one(job)
+        if pool:
+            for f in futs:
+                f.result()                       # re-raise render errors like the sequential path
+            pool.shutdown()
     finally:
         wav.unlink(missing_ok=True)
         if tmp:
             Path(tmp).unlink(missing_ok=True)
     return made
+
+
+def data_used():
+    """Bytes used by clips/chunks/database in the data folder (browser login profiles are not counted)."""
+    tot = 0
+    for f in DATA.rglob("*"):
+        try:
+            if f.is_file() and "tiktok_profile" not in f.parts and "browser_profile" not in f.parts:
+                tot += f.stat().st_size
+        except OSError:
+            pass
+    return tot
 
 
 def cleanup_sources(vid, keep=2):
@@ -266,7 +304,7 @@ def janitor():
     budget = float(c.get("disk_budget_gb", 0) or 0)
     if budget > 0:
         def used():
-            return sum(f.stat().st_size for f in DATA.rglob("*") if f.is_file() and "tiktok_profile" not in f.parts)
+            return data_used()
         total = used()
         if total > budget * 1e9:
             # oldest first: processed raw chunks -> posted clips -> skipped -> recut sources -> old low-viral pending

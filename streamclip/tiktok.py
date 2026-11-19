@@ -1,7 +1,7 @@
 """Post clips to TikTok through the normal website (TikTok Studio upload page) with Playwright.
 
-The browser profile is persistent (data/tiktok_profile): you log in ONCE with `login_tiktok.bat`,
-then every upload reuses that session - no passwords stored by this program.
+Each TikTok account has its own persistent browser profile (accounts.profile_dir): you log in ONCE per account
+from Accounts -> Log in, then every upload reuses that session - no passwords stored by this program.
 Flow and selectors follow the open-source tiktok-uploader project (wkaisertexas/tiktok-uploader, MIT),
 updated for the TikTok Studio page, with screenshots on every failure in data/screens/.
 """
@@ -9,15 +9,24 @@ import re, time
 from pathlib import Path
 from .util import DATA, cfg, log
 
-UPLOAD_URL = "https://www.tiktok.com/tiktokstudio/upload?from=webapp&lang=ro-RO"
+UPLOAD_URL = "https://www.tiktok.com/tiktokstudio/upload?from=webapp"
 PROFILE = DATA / "tiktok_profile"
 SHOTS = DATA / "screens"
 
 
-def _ctx(p, headless=None):
+def _profile(acc=None):
+    if acc is None:
+        return PROFILE
+    from .accounts import profile_dir
+    return profile_dir(acc)
+
+
+def _ctx(p, headless=None, acc=None):
     c = cfg()
-    args = dict(user_data_dir=str(PROFILE), headless=c.get("headless", False) if headless is None else headless,
-                viewport={"width": 1280, "height": 900}, locale="ro-RO",
+    prof = _profile(acc)
+    prof.mkdir(parents=True, exist_ok=True)
+    args = dict(user_data_dir=str(prof), headless=c.get("headless", False) if headless is None else headless,
+                viewport={"width": 1280, "height": 900}, locale="ro-RO" if c.get("ui_language") == "ro" else "en-US",
                 args=["--disable-blink-features=AutomationControlled"])
     ch = c.get("browser_channel", "chrome")
     if ch and ch != "chromium":
@@ -36,13 +45,12 @@ _lock = __import__("threading").Lock()     # one browser at a time (login / uplo
 LOGIN_STATE = {"state": "necunoscut"}
 
 
-def login(timeout=600):
+def login(timeout=600, acc=None):
     """Opens a visible browser on TikTok login; you log in by hand; we wait until the session cookie appears
     (max 10 min) and keep it in the persistent profile. No password is stored by this program."""
     from playwright.sync_api import sync_playwright
-    PROFILE.mkdir(parents=True, exist_ok=True)
     with _lock, sync_playwright() as p:
-        ctx = _ctx(p, headless=False)
+        ctx = _ctx(p, headless=False, acc=acc)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto("https://www.tiktok.com/login")
         LOGIN_STATE["state"] = "astept sa te loghezi in fereastra Chrome"
@@ -67,16 +75,16 @@ def login(timeout=600):
     return ok
 
 
-def is_logged_in():
+def is_logged_in(acc=None):
     """Cheap check: does the saved profile hold a TikTok session cookie? (reads the browser profile offline)"""
     from playwright.sync_api import sync_playwright
-    if not PROFILE.exists():
+    if not _profile(acc).exists():
         return False
     if not _lock.acquire(timeout=1):
         return None   # busy uploading
     try:
         with sync_playwright() as p:
-            ctx = _ctx(p, headless=True)
+            ctx = _ctx(p, headless=True, acc=acc)
             ok = any(ck["name"] == "sessionid" and ck["value"] for ck in ctx.cookies("https://www.tiktok.com"))
             ctx.close()
             return ok
@@ -131,15 +139,15 @@ def find_warning(text):
     return None
 
 
-def upload(video: Path, caption: str, visibility=None):
+def upload(video: Path, caption: str, visibility=None, acc=None):
     """Upload one video. Returns (ok, message, url_or_None)."""
     from .texts import finalize_caption
     caption = finalize_caption(caption)        # last safety net: the required hashtag (if set) first, always
     with _lock:
-        ok, msg = _upload(video, caption, visibility)
+        ok, msg = _upload(video, caption, visibility, acc)
         url = None
         if ok:
-            url = latest_video_url()
+            url = latest_video_url(acc)
         return ok, msg, url
 
 
@@ -150,13 +158,13 @@ def _body(page):
         return ""
 
 
-def recent_posts(n=15):
+def recent_posts(n=15, acc=None):
     """Best effort: [(url, text)] of the newest posts in TikTok Studio (text = description shown in the list).
     None if the page could not be read (not logged in, layout changed...)."""
     from playwright.sync_api import sync_playwright
     try:
         with _lock, sync_playwright() as p:
-            ctx = _ctx(p)
+            ctx = _ctx(p, acc=acc)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto("https://www.tiktok.com/tiktokstudio/content", wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(7000)
@@ -172,9 +180,9 @@ def recent_posts(n=15):
         return None
 
 
-def find_posted(caption, posts=None):
+def find_posted(caption, posts=None, acc=None):
     """Is a post with (the start of) this caption already online? -> url / False / None (can't tell)."""
-    posts = recent_posts() if posts is None else posts
+    posts = recent_posts(acc=acc) if posts is None else posts
     if posts is None:
         return None
     def norm(s):
@@ -188,12 +196,12 @@ def find_posted(caption, posts=None):
     return False
 
 
-def latest_video_url():
+def latest_video_url(acc=None):
     """Best effort: link of the newest post from TikTok Studio's content list."""
     from playwright.sync_api import sync_playwright
     try:
         with sync_playwright() as p:
-            ctx = _ctx(p)
+            ctx = _ctx(p, acc=acc)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto("https://www.tiktok.com/tiktokstudio/content", wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(6000)
@@ -204,9 +212,10 @@ def latest_video_url():
         return None
 
 
-def required_tag():
-    """The campaign hashtag from Settings (empty = none). Posting is refused if it does not become a real tag."""
-    t = str(cfg().get("required_hashtag") or "").strip()
+def required_tag(acc=None):
+    """The campaign hashtag (the account's own, else the one from Settings; empty = none). Posting is refused
+    if it does not become a real, clickable tag."""
+    t = str((acc or {}).get("required_hashtag") or cfg().get("required_hashtag") or "").strip()
     return ("#" + t.lstrip("#")).lower() if t.strip("#") else ""
 
 
@@ -249,18 +258,18 @@ def _type_hashtag(frame, page, tag):
     return False
 
 
-def _upload(video: Path, caption: str, visibility=None):
+def _upload(video: Path, caption: str, visibility=None, acc=None):
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     visibility = visibility or cfg().get("visibility", "public")
     with sync_playwright() as p:
-        ctx = _ctx(p)
+        ctx = _ctx(p, acc=acc)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             page.goto(UPLOAD_URL, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(4000)
             if "login" in page.url:
                 _shot(page, "not_logged_in")
-                return False, "nu esti logat pe TikTok: ruleaza login_tiktok.bat"
+                return False, "nu esti logat pe TikTok: apasa Login la contul din Conturi"
             _dismiss(page)
             frame = page
             if page.locator("iframe").count() and not page.locator("input[type=file]").count():
@@ -280,7 +289,7 @@ def _upload(video: Path, caption: str, visibility=None):
                 else:
                     page.keyboard.type(part + " ", delay=25)
             page.wait_for_timeout(800)
-            req = required_tag()
+            req = required_tag(acc)
             if req and req not in _linked_hashtags(ed):
                 _shot(page, "hashtag_not_linked")
                 return False, f"{req} nu a devenit hashtag clickabil (doar text) - nu am postat"

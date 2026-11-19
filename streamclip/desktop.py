@@ -15,7 +15,9 @@ def _running(port):
 
 
 def engine(post=True):
-    from . import app
+    from . import app, sysinfo
+    if cfg().get("keep_awake", True):     # 24/7 clipping: no sleep while the engine thread lives (reverts on exit)
+        sysinfo.keep_awake(True)
     while not app.STOP.is_set():
         try:
             app.run_forever(post=post)
@@ -53,6 +55,7 @@ def splash_html():
 def _start_engine(port):
     from . import web, updater
     web.serve(port)
+
     if cfg().get("check_updates", True):
         updater.check_async()
     threading.Thread(target=engine, daemon=True, name="engine").start()
@@ -85,8 +88,28 @@ def main(no_window=False):
                 while True:
                     time.sleep(3600)
             return _window(url, owner=True)
+        from . import sysinfo
+        tray = bool(cfg().get("minimize_to_tray", False)) and sysinfo.tray_available()
         w = webview.create_window(TITLE, html=splash_html(), width=1440, height=920, min_size=(900, 600),
-                                  confirm_close=True, text_select=True, background_color="#0d0f14")
+                                  confirm_close=not tray, text_select=True, background_color="#0d0f14")
+        sysinfo.WINDOW = w
+        quitting = {"v": False}
+
+        def really_quit():
+            quitting["v"] = True
+            w.destroy()
+
+        def on_closing():
+            # "Minimize to tray": the X hides the window, the engine keeps clipping; Quit from the tray menu
+            if tray and not quitting["v"] and cfg().get("minimize_to_tray", False):
+                if sysinfo.to_tray(w, really_quit):
+                    return False
+            return True
+        sysinfo.QUIT = really_quit
+        try:
+            w.events.closing += on_closing
+        except Exception:
+            pass
 
         def boot():
             import json as _j

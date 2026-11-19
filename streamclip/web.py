@@ -4,11 +4,11 @@ import hmac, json, mimetypes, re, secrets, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
-from . import app, db, effects, i18n, jobs, progress, styles, render, pipeline, texts, updater, viral
-from .util import DATA, cfg, log, save_settings
+from . import accounts, app, db, effects, i18n, jobs, progress, styles, render, pipeline, texts, updater, viral
+from .util import DATA, cfg, log, reset_settings, save_settings
 
 WEB = Path(__file__).parent / "web"
-EDITABLE = {"language": str, "ui_language": str, "extra_keywords": list, "channel_url": str, "streamer_name": str,
+EDITABLE = {"youtube_client_secret": str, "language": str, "ui_language": str, "extra_keywords": list, "channel_url": str, "streamer_name": str,
             "game": str, "required_hashtag": str, "credit_text": str, "check_updates": bool, "auto_update": bool,
             "hashtags": list, "post_interval_min_minutes": float, "post_interval_max_minutes": float,
             "daily_post_cap": int, "auto_post": bool, "min_score": float, "clips_per_chunk_max": int,
@@ -17,7 +17,28 @@ EDITABLE = {"language": str, "ui_language": str, "extra_keywords": list, "channe
             "extra_hashtags": list, "hashtags_max": int, "effects": dict,
             "auto_post_min_viral": int, "post_order": str, "dedupe_similarity": float,
             "post_jitter_minutes": float, "post_preset": str, "delete_after_post": bool, "delete_after_post_days": float,
-            "keep_raw_chunks_hours": float, "skipped_retention_days": float, "disk_budget_gb": float}
+            "keep_raw_chunks_hours": float, "skipped_retention_days": float, "disk_budget_gb": float,
+            # General settings (1.2.1): performance, general, onboarding
+            "whisper_device": str, "whisper_model": str, "whisper_compute_type": str, "max_parallel_renders": int,
+            "encoder": str, "theme": str, "start_with_windows": bool, "minimize_to_tray": bool, "notifications": bool,
+            "onboarded": bool}
+CHOICES = {"whisper_device": ("auto", "cuda", "cpu"),
+           "whisper_model": ("auto", "large-v3", "large-v3-turbo", "medium", "small", "base", "tiny"),
+           "whisper_compute_type": ("auto", "float16", "int8_float16", "int8", "float32"),
+           "encoder": ("auto", "h264_nvenc", "libx264"), "theme": ("dark", "light"), "visibility": ("public", "private"),
+           "layout": ("split", "blur", "fill")}
+SECTIONS = {
+    "general": ["ui_language", "theme", "start_with_windows", "minimize_to_tray", "notifications"],
+    "performance": ["whisper_device", "whisper_model", "whisper_compute_type", "max_parallel_renders", "encoder"],
+    "storage": ["delete_after_post", "delete_after_post_days", "keep_raw_chunks_hours", "skipped_retention_days", "disk_budget_gb"],
+    "updates": ["auto_update", "check_updates"],
+    "clipping": ["language", "channel_url", "streamer_name", "game", "credit_text", "extra_keywords", "min_score",
+                 "clips_per_chunk_max", "layout", "caption_font", "censor_swears", "live_title_filter", "effects"],
+    "posting": ["required_hashtag", "hashtags", "extra_hashtags", "hashtags_max", "caption_template", "auto_post",
+                "auto_post_min_viral", "post_order", "post_interval_min_minutes", "post_interval_max_minutes",
+                "post_jitter_minutes", "manual_min_gap_minutes", "daily_post_cap", "quiet_hours", "visibility",
+                "post_preset", "dedupe_similarity"],
+}
 PRESETS = {"sigur": {"daily_post_cap": 20, "post_interval_min_minutes": 40, "post_interval_max_minutes": 60},
            "normal": {"daily_post_cap": 45, "post_interval_min_minutes": 20, "post_interval_max_minutes": 30},
            "agresiv": {"daily_post_cap": 60, "post_interval_min_minutes": 15, "post_interval_max_minutes": 20}}
@@ -36,6 +57,25 @@ def sort_rows(rows, sort="viral", min_viral=0, style=None):
 def ensure_tags(cap):
     """Captions edited in the app: required_hashtag (if set) is forced in as the FIRST hashtag."""
     return texts.finalize_caption(cap)
+
+
+def _acc_cache():
+    try:
+        return {a["id"]: a for a in accounts.all_accounts()}
+    except Exception:
+        return {}
+
+
+def accounts_payload():
+    from . import youtube_upload
+    stats = db.account_stats(app.midnight())
+    out = []
+    for a in accounts.all_accounts():
+        d = accounts.public(a)
+        d["today"] = stats.get(a["id"], {}).get("today", 0)
+        d["queued"] = db.q("SELECT COUNT(*) n FROM clips WHERE status='queued' AND account=?", (a["id"],), one=True)["n"]
+        out.append(d)
+    return {"accounts": out, "youtube_configured": bool(youtube_upload.client()), "defaults": accounts.DEFAULTS}
 
 
 def clip_row(r):
@@ -57,6 +97,9 @@ def clip_row(r):
         d["factors_list"] = [[viral.LABELS.get(k, k), v] for k, v in (fac or {}).items()]
         d["viral_tip"] = "Șansă de viral (estimare): " + str(d["viral"]) + "%\n" + viral.tooltip(fac)
     d["can_recut"] = bool(d.get("src")) and Path(d["src"]).exists()
+    acc = _acc_cache().get(d.get("account") or "")
+    d["account_name"] = acc["name"] if acc else ""
+    d["account_platform"] = acc["platform"] if acc else ""
     d["style"] = d.get("style") or "moment"
     d["style_label"] = styles.label(d["style"]) if d["style"] in styles.LABEL else ("🏆 Top 5" if d["style"] == "top5" else d["style"])
     return d
@@ -93,6 +136,8 @@ class H(BaseHTTPRequestHandler):
         pass
 
     def _json(self, obj, code=200):
+        if isinstance(obj, dict) and isinstance(obj.get("error"), str) and i18n.english():
+            obj = dict(obj, error=i18n.en(obj["error"]))
         b = json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(code); self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store")
@@ -188,7 +233,7 @@ class H(BaseHTTPRequestHandler):
                     out = sort_rows(out, sort, mv, sty)
                     return self._json(out)
                 if st == "posted":
-                    rows = db.q("SELECT * FROM clips WHERE status IN ('posted','unconfirmed') ORDER BY posted_at DESC LIMIT 200")
+                    rows = db.q("SELECT * FROM clips WHERE status IN ('posted','unconfirmed','exported') ORDER BY posted_at DESC LIMIT 200")
                 elif st == "all":
                     rows = db.q("SELECT * FROM clips WHERE status!='deleted' ORDER BY created DESC, score DESC LIMIT 500")
                 else:
@@ -199,7 +244,8 @@ class H(BaseHTTPRequestHandler):
                 import shutil as _sh
                 try:
                     du = _sh.disk_usage(DATA)
-                    disk = {"free_gb": round(du.free / 1e9, 1), "total_gb": round(du.total / 1e9, 1)}
+                    disk = {"free_gb": round(du.free / 1e9, 1), "total_gb": round(du.total / 1e9, 1),
+                            "used_gb": round(pipeline.data_used() / 1e9, 2)}
                 except OSError:
                     disk = {}
                 from .util import ROOT as _R
@@ -227,6 +273,26 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/tiktok":
                 from . import tiktok
                 return self._json({"login": tiktok.LOGIN_STATE["state"]})
+            if u.path == "/api/accounts":
+                return self._json(accounts_payload())
+            if u.path == "/api/system":
+                from . import sysinfo
+                d = dict(sysinfo.detect(refresh=qs.get("refresh", ["0"])[0] == "1"))
+                d.update(autostart_supported=sysinfo.autostart_supported(), autostart=sysinfo.autostart_get(),
+                         tray_available=sysinfo.tray_available(), sections=SECTIONS)
+                return self._json(d)
+            if u.path == "/oauth/youtube":                     # Google sends the browser back here after consent
+                from . import youtube_upload
+                ok, msg = True, "YouTube connected. You can close this tab and go back to Stream Clipper."
+                try:
+                    youtube_upload.finish_auth(qs.get("state", [""])[0], qs.get("code", [""])[0])
+                except Exception as e:
+                    ok, msg = False, "Could not connect YouTube: " + i18n.en(str(e))
+                b = (f"<!doctype html><meta charset=utf-8><title>Stream Clipper</title><body style='font:16px system-ui;"
+                     f"background:#0d1117;color:#e6edf3;display:grid;place-items:center;height:90vh'><p>{'✅' if ok else '⚠️'} "
+                     f"{msg.replace('<', '&lt;')}</p>").encode()
+                self.send_response(200 if ok else 400); self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b); return
         except Exception as e:
             log.exception("web GET %s", u.path)
             return self._json({"error": str(e)}, 500)
@@ -265,7 +331,20 @@ class H(BaseHTTPRequestHandler):
                     cap = b.get("caption")
                     if cap is not None:                          # required_hashtag (if set) can never be removed
                         db.x("UPDATE clips SET caption=? WHERE id=?", (ensure_tags(cap), cid))
-                    db.x("UPDATE clips SET status='queued', queued_at=?, attempts=0, error=NULL WHERE id=?", (time.time(), cid))
+                    targets = [t for t in (b.get("accounts") or []) if accounts.get(t)]
+                    db.x("UPDATE clips SET status='queued', queued_at=?, attempts=0, error=NULL, account=? WHERE id=?",
+                         (time.time(), targets[0] if targets else (r["account"] if r["status"] != "posted" else None), cid))
+                    for t in targets[1:]:                        # same clip to more accounts -> one queued copy each
+                        db.clone_clip(cid, t)
+                elif a == "set_account":
+                    acc = b.get("account") or None
+                    if acc and not accounts.get(acc):
+                        return self._json({"error": "cont inexistent"}, 400)
+                    db.x("UPDATE clips SET account=? WHERE id=?", (acc, cid))
+                elif a == "clone":
+                    if not accounts.get(b.get("account") or ""):
+                        return self._json({"error": "cont inexistent"}, 400)
+                    return self._json({"ok": True, "id": db.clone_clip(cid, b["account"])})
                 elif a == "caption":
                     db.x("UPDATE clips SET caption=? WHERE id=?", (ensure_tags(b.get("caption") or ""), cid))
                 elif a == "skip":
@@ -320,6 +399,25 @@ class H(BaseHTTPRequestHandler):
                     else:
                         v = t(v)
                     ch[k] = v
+                for k, opts in CHOICES.items():
+                    if k in ch and ch[k] not in opts:
+                        return self._json({"error": f"{k}: {' / '.join(opts)}"}, 400)
+                if "max_parallel_renders" in ch:
+                    ch["max_parallel_renders"] = max(1, min(4, ch["max_parallel_renders"]))
+                if "start_with_windows" in ch:
+                    from . import sysinfo
+                    if ch["start_with_windows"] != sysinfo.autostart_get():
+                        ok, msg = sysinfo.autostart_set(ch["start_with_windows"])
+                        if not ok:
+                            ch.pop("start_with_windows")
+                            if b.get("start_with_windows"):
+                                return self._json({"error": msg}, 400)
+                old = cfg()
+                if any(k in ch and ch[k] != old.get(k) for k in ("whisper_device", "whisper_model", "whisper_compute_type")):
+                    from . import transcribe
+                    transcribe._model = None                     # loads with the new settings on the next chunk
+                if "encoder" in ch and ch["encoder"] != old.get("encoder"):
+                    render._enc = None
                 if "ui_language" in ch and ch["ui_language"] not in ("en", "ro"):
                     return self._json({"error": "ui_language: en / ro"}, 400)
                 if "language" in ch:
@@ -411,10 +509,97 @@ class H(BaseHTTPRequestHandler):
                 return self._json({"ok": True})
             if u.path == "/api/update":
                 return self._json(updater.start_update())
+            if u.path == "/api/settings/reset":
+                sec = b.get("section") or ""
+                keys = sum(SECTIONS.values(), []) if sec == "all" else SECTIONS.get(sec)
+                if keys is None:
+                    return self._json({"error": "actiune necunoscuta"}, 400)
+                if "start_with_windows" in keys:
+                    from . import sysinfo
+                    sysinfo.autostart_set(False)
+                if "auto_post" in keys and cfg().get("auto_post"):
+                    app.note_auto(False, "Resetare setări")
+                reset_settings(keys + (["onboarded"] if sec == "all" else []))
+                render._enc = None
+                from . import transcribe
+                transcribe._model = None
+                done = {"section": sec}
+                if sec == "all" and b.get("delete_clips"):       # only when ticked in the confirmation dialog
+                    n = 0
+                    for r in db.q("SELECT * FROM clips WHERE status NOT IN ('deleted','posting')"):
+                        for f in (r["file"], r["thumb"], r["src"]):
+                            if f and inside(Path(f), DATA):
+                                for ext in (".mp4", ".jpg", ".json", ".ass"):
+                                    Path(f).with_suffix(ext).unlink(missing_ok=True)
+                        n += 1
+                    db.x("UPDATE clips SET status='deleted' WHERE status NOT IN ('deleted','posting')")
+                    done["clips_deleted"] = n
+                if sec == "all" and b.get("delete_accounts"):
+                    import shutil as _sh
+                    for a in accounts.all_accounts():
+                        for d in (accounts.profile_dir(a), accounts.token_file(a).parent):
+                            if d.exists() and inside(d, DATA) and d.resolve() != DATA.resolve():
+                                _sh.rmtree(d, ignore_errors=True)
+                    accounts.FILE.unlink(missing_ok=True)
+                    Path(str(accounts.FILE) + ".bak").unlink(missing_ok=True)
+                    done["accounts_deleted"] = True
+                log.info("setari resetate: %s", done)
+                return self._json(dict(done, ok=True))
+            if u.path == "/api/open_folder":
+                from . import sysinfo
+                _clips = pipeline.CLIPS
+                which = b.get("which") or "clips"
+                path = {"clips": _clips, "data": DATA, "exports": DATA / "exports"}.get(which)
+                if not path:
+                    return self._json({"error": "actiune necunoscuta"}, 400)
+                return self._json({"ok": sysinfo.open_folder(path), "path": str(path)})
+            if u.path == "/api/exit":
+                from . import sysinfo
+                def bye():
+                    time.sleep(0.3)
+                    q = getattr(sysinfo, "QUIT", None)
+                    if q:
+                        q()
+                    else:
+                        app.STOP.set(); import os as _os; _os._exit(0)
+                threading.Thread(target=bye, daemon=True).start()
+                return self._json({"ok": True})
             if u.path == "/api/tiktok_login":
                 from . import tiktok
-                threading.Thread(target=tiktok.login, daemon=True, name="login").start()
+                acc = accounts.get(b.get("account") or "") if b.get("account") else None
+                threading.Thread(target=tiktok.login, kwargs={"acc": acc}, daemon=True, name="login").start()
                 return self._json({"ok": True})
+            if u.path == "/api/accounts":
+                a = b.get("action")
+                if a == "save":
+                    return self._json({"ok": True, "account": accounts.upsert(b.get("account") or {})})
+                if a == "remove":
+                    acc = accounts.get(b.get("id") or "")
+                    if not acc:
+                        return self._json({"error": "cont inexistent"}, 404)
+                    accounts.remove(acc["id"])
+                    if b.get("delete_login"):                    # only when you tick it in the confirmation
+                        import shutil as _sh
+                        for d in (accounts.profile_dir(acc), accounts.token_file(acc).parent):
+                            if d.exists() and inside(d, DATA) and d != DATA:
+                                (_sh.rmtree(d, ignore_errors=True) if d.is_dir() else d.unlink(missing_ok=True))
+                    db.x("UPDATE clips SET account=NULL WHERE account=? AND status IN ('pending','queued','failed')", (acc["id"],))
+                    return self._json({"ok": True})
+                if a == "youtube_connect":
+                    from . import youtube_upload
+                    acc = accounts.get(b.get("id") or "")
+                    if not acc or acc["platform"] != "youtube":
+                        return self._json({"error": "cont YouTube inexistent"}, 404)
+                    url = youtube_upload.auth_url(acc["id"], self.server.server_address[1])
+                    import webbrowser
+                    webbrowser.open(url)
+                    return self._json({"ok": True, "url": url})
+                if a == "youtube_disconnect":
+                    acc = accounts.get(b.get("id") or "")
+                    if acc:
+                        accounts.clear_token(acc)
+                    return self._json({"ok": True})
+                return self._json({"error": "actiune necunoscuta"}, 400)
         except Exception as e:
             log.exception("web POST %s", u.path)
             return self._json({"error": str(e)}, 500)

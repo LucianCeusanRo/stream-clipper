@@ -184,6 +184,25 @@ def save_settings(changes):
     return cfg()
 
 
+def reset_settings(keys):
+    """'Reset to defaults': the listed keys go back to the app defaults (config.example.yaml); keys the example
+    does not have are simply dropped from your overrides. Clips, accounts and logins are not touched here."""
+    import yaml
+    ex = ROOT / "config.example.yaml"
+    defaults = (yaml.safe_load(ex.read_text(encoding="utf-8")) or {}) if ex.exists() else {}
+    cur = load_json(SETTINGS, {}) if SETTINGS.exists() else {}
+    for k in keys:
+        if k in defaults:
+            cur[k] = defaults[k]
+        else:
+            cur.pop(k, None)
+    DATA.mkdir(parents=True, exist_ok=True)
+    save_json(SETTINGS, cur)
+    global _cfg
+    _cfg = None
+    return cfg()
+
+
 BIN = ROOT / "bin"            # setup.bat drops ffmpeg/ffprobe/deno here (no winget, no PATH changes needed)
 if BIN.is_dir() and str(BIN) not in os.environ.get("PATH", ""):
     os.environ["PATH"] = str(BIN) + os.pathsep + os.environ.get("PATH", "")   # yt-dlp finds deno.exe this way

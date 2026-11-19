@@ -14,7 +14,7 @@ import random, re, threading, time, traceback
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from . import db, pipeline, progress, recorder, tiktok, youtube
+from . import accounts, db, pipeline, progress, recorder, tiktok, youtube
 from .util import DATA, cfg, log, sleep_until, ffprobe_duration
 
 STOP = threading.Event()           # program exit
@@ -235,6 +235,55 @@ def midnight():
     return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 
+ACC_PAUSE = {}          # account id -> paused until (e.g. YouTube daily quota used up)
+
+
+def _get(clip, k):
+    try:
+        return clip[k]
+    except (KeyError, IndexError):
+        return None
+
+
+def account_caption(caption, acc):
+    """Use the account's own hashtags (required one first) when it has any; the text stays the same."""
+    if not acc or not (acc.get("hashtags") or acc.get("required_hashtag")):
+        return caption
+    words = caption.split()
+    text = [w for w in words if not w.startswith("#")]
+    old = [w for w in words if w.startswith("#")]
+    tags, seen = [], set()
+    for t in ([acc["required_hashtag"]] if acc.get("required_hashtag") else []) + acc.get("hashtags", []) + old:
+        if t.lower() not in seen:
+            seen.add(t.lower()); tags.append(t)
+    return " ".join(text + tags[: max(1, int(cfg().get("hashtags_max", 5)))])
+
+
+def account_ready(acc, stats, now=None):
+    """-> (ok, reason) for posting to this account right now (enabled, own daily cap, own pace, pauses)."""
+    now = now or time.time()
+    if not acc or not acc["enabled"]:
+        return False, "cont dezactivat"
+    if acc["platform"] == "tiktok" and backoff().get("until", 0) > now:
+        return False, f"pauză automată (TikTok) până la {datetime.fromtimestamp(backoff()['until']):%H:%M}"
+    if ACC_PAUSE.get(acc["id"], 0) > now:
+        return False, f"{acc['name']}: pauză până la {datetime.fromtimestamp(ACC_PAUSE[acc['id']]):%H:%M}"
+    st = stats.get(acc["id"], {"today": 0, "last": 0})
+    if st["today"] >= acc["daily_cap"]:
+        return False, f"{acc['name']}: limita zilnica atinsa ({acc['daily_cap']})"
+    if st["last"] and now - st["last"] < acc["interval_min"] * 60:
+        return False, f"{acc['name']}: urmatoarea postare la {datetime.fromtimestamp(st['last'] + acc['interval_min'] * 60):%H:%M}"
+    return True, ""
+
+
+def target_account(clip, stats):
+    """The account chosen for the clip, else the default rotation (enabled account that posted least today)."""
+    acc_id = _get(clip, "account")
+    if not acc_id:
+        acc_id = accounts.rotation_pick({k: v["today"] for k, v in stats.items()}, {k: v["last"] for k, v in stats.items()})
+    return accounts.get(acc_id) if acc_id else None
+
+
 def post_one(clip):
     """Upload one clip and record the result. Returns True if posted."""
     c = cfg()
@@ -254,13 +303,30 @@ def _post_one(clip, c):
             log.info("descriere identica cu o postare recenta -> variantă nouă: %s", clip["caption"])
         except Exception:
             pass
-    db.x("UPDATE clips SET status='posting', attempts=attempts+1 WHERE id=?", (clip["id"],))
+    acc = target_account(clip, db.account_stats(midnight())) or accounts.all_accounts()[0]
+    caption = account_caption(clip["caption"], acc)
+    db.x("UPDATE clips SET status='posting', attempts=attempts+1, account=? WHERE id=?", (acc["id"], clip["id"]))
     STATUS["poster"] = f"postez {Path(clip['file']).name}"
-    log.info("POSTEZ pe TikTok: %s | %s", Path(clip["file"]).name, clip["caption"])
+    log.info("POSTEZ pe %s (%s): %s | %s", acc["platform"], acc["name"], Path(clip["file"]).name, caption)
+    mode = "api"
     try:
-        ok, msg, url = tiktok.upload(Path(clip["file"]), clip["caption"])
+        if acc["platform"] == "youtube":
+            from . import youtube_upload
+            ok, msg, url, mode = youtube_upload.upload(acc, Path(clip["file"]), caption)
+        else:
+            ok, msg, url = tiktok.upload(Path(clip["file"]), caption, acc.get("visibility"), acc)
     except Exception as e:
         ok, msg, url = False, f"eroare browser: {str(e)[:150]}", None
+    if ok and mode == "export":
+        db.x("UPDATE clips SET status='exported', posted_at=?, url=NULL, error=? WHERE id=?",
+             (time.time(), f"{msg}: {url}", clip["id"]))
+        log.info("EXPORTAT pentru upload manual: %s", url)
+        return True
+    if not ok and msg.startswith("limitare YouTube"):
+        db.x("UPDATE clips SET status='queued', attempts=MAX(0, attempts-1), error=? WHERE id=?", (msg, clip["id"]))
+        ACC_PAUSE[acc["id"]] = midnight() + 86400 + 10 * 3600   # quota resets at midnight Pacific -> retry tomorrow
+        error(f"{acc['name']}: {msg}")
+        return False
     if ok:
         db.x("UPDATE clips SET status='posted', posted_at=?, url=?, error=NULL WHERE id=?", (time.time(), url, clip["id"]))
         log.info("POSTAT OK %s. Azi: %d/%d", url or "", db.posts_since(midnight()), c.get("daily_post_cap", 45))
@@ -274,7 +340,7 @@ def _post_one(clip, c):
         db.x("UPDATE clips SET status='unconfirmed', posted_at=?, error=? WHERE id=?", (time.time(), msg, clip["id"]))
         error(f"postare neconfirmata: {msg}. Verifica in TikTok Studio; daca nu apare, apasa din nou Posteaza.")
         return True
-    if msg.startswith("limitare TikTok"):
+    if msg.startswith("limitare TikTok"):          # a TikTok warning pauses all TikTok posting (conservative)
         db.x("UPDATE clips SET status='queued', attempts=MAX(0, attempts-1), error=? WHERE id=?", (msg, clip["id"]))
         set_backoff(msg.split(":", 1)[1].strip())
         return False
@@ -292,7 +358,12 @@ def verify_interrupted(posts=None):
         return
     progress.stage("postare", None, f"verific pe TikTok {len(rows)} postări întrerupte", ch="post")
     for r in rows:
-        res = tiktok.find_posted(r["caption"], posts)
+        acc = accounts.get(_get(r, "account") or "main")
+        if acc and acc["platform"] == "youtube":    # API upload is all-or-nothing: no video id = not posted
+            db.x("UPDATE clips SET status='unconfirmed', error=? WHERE id=?",
+                 ("aplicația s-a închis în timpul uploadului YouTube - verifică în YouTube Studio", r["id"]))
+            continue
+        res = tiktok.find_posted(r["caption"], posts, acc)
         if res:
             db.x("UPDATE clips SET status='posted', posted_at=COALESCE(posted_at, ?), url=?, error=NULL WHERE id=?",
                  (time.time(), res if isinstance(res, str) else None, r["id"]))
@@ -316,23 +387,39 @@ def poster():
     while not STOP.is_set():
         c = cfg()
         auto = bool(c.get("auto_post", False))
-        STATUS["next_post_at"] = 0
+        # next_post_at is cleared only in the branches that really have no next post (clearing it on every loop
+        # made the dashboard countdown flicker to "now" between two polls) - fix from upstream 1203274
         if POST_PAUSED.is_set():
+            STATUS["next_post_at"] = 0
             STATUS["poster"] = "pauza"; sleep_until(STOP, 5); continue
-        b = backoff()
-        if b.get("until", 0) > time.time():
-            STATUS["poster"] = f"pauză automată (TikTok) până la {datetime.fromtimestamp(b['until']):%H:%M}"
-            STATUS["next_post_at"] = b["until"]
-            sleep_until(STOP, 10); continue
-        clip = db.next_clip_to_post(c.get("post_order", "viral_first"), auto=auto, min_viral=int(c.get("auto_post_min_viral", 40)))
-        if not clip:
+        plan, _ = db.post_plan(c.get("post_order", "viral_first"), auto, int(c.get("auto_post_min_viral", 40)), limit=50)
+        if not plan:
+            STATUS["next_post_at"] = 0
             STATUS["poster"] = "nimic de postat" + (" (auto-postare ON)" if auto else " (apasa Posteaza pe un clip)")
             sleep_until(STOP, 5); continue
+        # global cap over all accounts together (each account also has its own, stricter-wins)
+        if db.posts_since(midnight()) >= c.get("daily_post_cap", 45):
+            STATUS["next_post_at"] = 0
+            STATUS["poster"] = f"limita zilnica atinsa ({c.get('daily_post_cap', 45)})"; sleep_until(STOP, 30); continue
+        stats = db.account_stats(midnight())
+        clip, why = None, ""
+        for cand in plan:                    # first clip whose account may post now (own cap / pace / pause)
+            ok_acc, why = account_ready(target_account(cand, stats), stats)
+            if ok_acc:
+                clip = cand; break
+        if not clip:
+            b = backoff()
+            if b.get("until", 0) > time.time():
+                STATUS["poster"] = f"pauză automată (TikTok) până la {datetime.fromtimestamp(b['until']):%H:%M}"
+                STATUS["next_post_at"] = b["until"]
+            else:
+                STATUS["next_post_at"] = 0
+                STATUS["poster"] = why or "niciun cont activ"
+            sleep_until(STOP, 10); continue
         manual = clip["status"] == "queued"
         if not manual and datetime.now().hour in (c.get("quiet_hours") or []):
+            STATUS["next_post_at"] = 0
             STATUS["poster"] = "ore de liniste"; sleep_until(STOP, 60); continue
-        if db.posts_since(midnight()) >= c.get("daily_post_cap", 45):
-            STATUS["poster"] = f"limita zilnica atinsa ({c.get('daily_post_cap', 45)})"; sleep_until(STOP, 30); continue
         # spacing: approved clips wait at least post_min_gap_minutes, auto ones the random 30-45 min interval
         # one post at a time; auto posts: random interval between min/max + jitter, so it never looks scheduled
         lo_m, hi_m = c.get("post_interval_min_minutes", 20), c.get("post_interval_max_minutes", 30)
@@ -348,6 +435,8 @@ def poster():
             sleep_until(STOP, min(5, next_at - time.time())); continue
         if not Path(clip["file"]).exists():
             db.x("UPDATE clips SET status='failed', error='fisierul video lipseste' WHERE id=?", (clip["id"],)); continue
+        STATUS["next_post_at"] = 0
+        STATUS["poster"] = "postez acum"
         posted = post_one(clip)
         next_at = 0
         STATUS["poster"] = "astept"

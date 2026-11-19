@@ -40,7 +40,10 @@ def model():
             ct = c.get("whisper_compute_type", "auto")
             if ct == "auto":
                 ct = "float16" if dev == "cuda" else "int8"
-            name = c.get("whisper_model", "large-v3")
+            name = c.get("whisper_model", "auto") or "auto"
+            auto_name = name == "auto"
+            if auto_name:                       # GPU -> best model; CPU only -> "small" (large-v3 is far too slow on CPU)
+                name = "large-v3" if dev == "cuda" else "small"
             log.info("incarc Whisper %s pe %s (%s)...", name, dev, ct)
             try:
                 _model = WhisperModel(name, device=dev, compute_type=ct)
@@ -48,7 +51,7 @@ def model():
                 if dev != "cuda":
                     raise
                 log.warning("GPU indisponibil pentru Whisper (%s) -> CPU", str(e)[:120])
-                _model = WhisperModel(name, device="cpu", compute_type="int8")
+                _model = WhisperModel("small" if auto_name else name, device="cpu", compute_type="int8")
         return _model
 
 

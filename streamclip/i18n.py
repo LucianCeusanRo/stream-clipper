@@ -25,8 +25,13 @@ _RULES = [(re.compile(a, re.I), b) for a, b in [
     (r"^verific pe TikTok (\d+) postări întrerupte$", r"checking \1 interrupted posts on TikTok"),
     (r"^normalizez volumul \(-14 LUFS\)$", "normalizing loudness (-14 LUFS)"),
     (r"^randez clipurile…", "rendering clips…"),
+    (r"nu esti logat pe TikTok: apasa Login la contul din Conturi", "not logged in to TikTok: press Log in on the account (Accounts)"),
+    (r"^exportat pentru upload manual$", "exported for manual upload"),
+    (r"limitare YouTube: cota zilnică API depășită", "YouTube limit: daily API quota used up"),
+    (r"^postare esuata \((.*?)\): ", r"posting failed (\1): "),
     (r"^(#\S+) nu a devenit hashtag clickabil \(doar text\) - nu am postat$", r"\1 did not become a clickable hashtag (plain text) - not posted"),
     (r"^procesez ", "processing "),
+    (r"^postez acum$", "posting now"),
     (r"^postez ", "posting "),
     (r"^pauza$", "paused"),
     (r"^nimic de postat \(auto-postare ON\)$", "nothing to post (auto-post ON)"),
@@ -34,6 +39,13 @@ _RULES = [(re.compile(a, re.I), b) for a, b in [
     (r"^ore de liniste$", "quiet hours"),
     (r"^limita zilnica atinsa", "daily limit reached"),
     (r"^urmatoarea postare la ", "next post at "),
+    (r": limita zilnica atinsa", ": daily limit reached"),
+    (r": urmatoarea postare la ", ": next post at "),
+    (r": pauză până la ", ": paused until "),
+    (r"^cont dezactivat$", "account disabled"),
+    (r"^niciun cont activ$", "no enabled account"),
+    (r"aplicația s-a închis în timpul uploadului YouTube - verifică în YouTube Studio",
+     "the app closed during the YouTube upload - check YouTube Studio"),
     (r"^astept$", "waiting"),
     (r"^pornesc$", "starting"),
     (r"^oprit \(apasa Start\)$", "stopped (press Start)"),
@@ -63,6 +75,25 @@ LABELS_EN = {"hook": "Hook (first 2 s)", "emotie": "Emotion / volume (screams, l
              "durata": "Good length (20–35 s ideal)", "ai": "AI score (LLM)"}
 
 
+ERRORS_EN = {
+    "actiune necunoscuta": "unknown action", "clip inexistent": "clip not found",
+    "cerere respinsa (token lipsa/gresit) - reincarca pagina": "request rejected (missing/wrong token) - reload the page",
+    "clipul e deja postat": "this clip is already posted", "clipul se posteaza acum": "this clip is being posted right now",
+    "clipul e sters": "this clip was deleted", "cont YouTube inexistent": "YouTube account not found",
+    "cont inexistent": "account not found", "fisier in afara folderului de date": "file outside the data folder",
+    "font necunoscut": "unknown font", "host nepermis": "host not allowed", "id invalid": "invalid id",
+    "intervalul minim trebuie sa fie cel putin 1 minut": "the minimum interval must be at least 1 minute",
+    "nu exista": "not found", "numarul de hashtag-uri trebuie sa fie intre 1 si 10": "hashtag count must be between 1 and 10",
+    "ordine necunoscuta": "unknown order", "pragul viral trebuie sa fie intre 0 si 100": "viral threshold must be between 0 and 100",
+    "ritm necunoscut": "unknown pace", "similaritatea trebuie sa fie intre 0.5 si 1.0": "similarity must be between 0.5 and 1.0",
+    "trebuie să rămână cel puțin un cont": "at least one account must remain",
+    "cerere de conectare expirată sau necunoscută - apasă din nou Conectează": "connect request expired or unknown - press Connect again",
+    "Google nu a trimis refresh_token - încearcă din nou": "Google did not send a refresh token - try again",
+    "lipsește youtube_client_secret în config.yaml (clientul tău OAuth Google, tip Desktop app)":
+        "youtube_client_secret is missing in config.yaml (your own Google OAuth client, type Desktop app)",
+}
+
+
 def english():
     from .util import cfg
     return str(cfg().get("ui_language") or "en").lower() != "ro"
@@ -72,6 +103,10 @@ def en(text):
     """Romanian status text -> English (unknown texts are returned unchanged)."""
     if not text or not isinstance(text, str):
         return text
+    if text in ERRORS_EN:
+        return ERRORS_EN[text]
+    if text.startswith("re-tăierea a eșuat: "):
+        return "re-cut failed: " + text[20:]
     for rx, rep in _RULES:
         text = rx.sub(rep, text)
     return text

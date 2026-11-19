@@ -8,3 +8,5 @@ playwright>=1.45
 nvidia-cublas-cu12; sys_platform == "win32"
 nvidia-cudnn-cu12>=9,<10; sys_platform == "win32"
 pywebview>=5.0; sys_platform == "win32"
+pystray>=0.19; sys_platform == "win32"     # optional: "minimize to tray"
+Pillow>=10; sys_platform == "win32"

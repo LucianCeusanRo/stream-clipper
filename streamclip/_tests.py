@@ -1,10 +1,10 @@
 """Automated tests (unittest). Run via `python -m streamclip selftest` (isolated temp CLIPPER_HOME)."""
-import random, re, json, os, shutil, subprocess, sys, threading, time, unittest, urllib.error, urllib.request, wave
+import random, re, json, os, shutil, subprocess, sys, threading, time, unittest, urllib.error, urllib.parse, urllib.request, wave
 from pathlib import Path
 import numpy as np
 
 assert os.environ.get("CLIPPER_HOME"), "run through `python -m streamclip selftest`"
-from streamclip import util, db, detect, render, transcribe, texts, pipeline, youtube, app, web, layout, tiktok, viral, effects, jobs, progress, styles, updater, facecam  # noqa
+from streamclip import accounts, youtube_upload, util, db, detect, render, transcribe, texts, pipeline, youtube, app, web, layout, tiktok, viral, effects, jobs, progress, styles, updater, facecam  # noqa
 
 QUICK = os.environ.get("CLIPPER_QUICK") == "1"
 # the tests use a clipping-campaign style required hashtag; T0 checks the default (none)
@@ -272,7 +272,7 @@ class T5Render(unittest.TestCase):
 class T6AppAndPosting(unittest.TestCase):
     def setUp(self):
         self.calls = []
-        def fake_upload(path, caption, visibility=None):
+        def fake_upload(path, caption, visibility=None, acc=None):
             self.calls.append(caption)
             return self.result
         self._orig = tiktok.upload
@@ -440,7 +440,7 @@ class T8HashtagsFirst(unittest.TestCase):
     def test_upload_gets_required_tag_first(self):
         got = {}
         orig = tiktok._upload
-        tiktok._upload = lambda v, cap, vis=None: (got.setdefault("cap", cap), (False, "test"))[1]
+        tiktok._upload = lambda v, cap, vis=None, acc=None: (got.setdefault("cap", cap), (False, "test"))[1]
         try:
             tiktok.upload(Path("x.mp4"), "titlu #fyp #gta6")
         finally:
@@ -814,7 +814,7 @@ class T17Persistence(unittest.TestCase):
         self.assertEqual(db.q("SELECT status FROM clips WHERE id=?", (a,), one=True)["status"], "posted")
         self.assertEqual(db.q("SELECT status FROM clips WHERE id=?", (b,), one=True)["status"], "queued")
         db.x("UPDATE clips SET status='verify' WHERE id=?", (c2,))
-        orig = tiktok.recent_posts; tiktok.recent_posts = lambda n=15: None
+        orig = tiktok.recent_posts; tiktok.recent_posts = lambda n=15, acc=None: None
         try:
             app.verify_interrupted()
         finally:
@@ -1109,6 +1109,218 @@ class T21RealRowChunk(unittest.TestCase):
                 pipeline.process_chunk(ch)
         finally:
             pipeline._window, pr.stage = ow, os_
+
+class T22Accounts(unittest.TestCase):
+    def setUp(self):
+        self.calls = []
+        def fake_upload(path, caption, visibility=None, acc=None):
+            self.calls.append((acc["id"] if acc else None, caption))
+            return True, "postat", None
+        self._orig = tiktok.upload; tiktok.upload = fake_upload
+        db.x("UPDATE clips SET status='skipped' WHERE status IN ('queued','pending','failed')")
+        accounts.save_all([{"id": "main", "name": "Main", "platform": "tiktok", "legacy_profile": True},
+                           {"id": "alt", "name": "Alt", "platform": "tiktok", "hashtags": "#gta6 #clips", "daily_cap": 2},
+                           {"id": "yt", "name": "Shorts", "platform": "youtube", "rotation": False}])
+
+    def tearDown(self):
+        tiktok.upload = self._orig
+        db.x("UPDATE clips SET status='skipped' WHERE status IN ('queued','pending','failed')")
+        accounts.save_all([{"id": "main", "name": "TikTok", "platform": "tiktok", "legacy_profile": True}])
+
+    def _clip(self, account=None):
+        f = Path(util.DATA) / f"a{time.time_ns()}.mp4"; f.write_bytes(b"x")
+        return db.add_clip(video_id="vidAcc", start=time.time() % 997, end=time.time() % 997 + 30, score=5, file=str(f),
+                           title="t", caption="Ce moment nebun pe stream #mycampaign #fyp", status="queued",
+                           queued_at=time.time(), account=account)
+
+    def row(self, cid):
+        return db.q("SELECT * FROM clips WHERE id=?", (cid,), one=True)
+
+    def test_normalize_and_profiles(self):
+        a = accounts.upsert({"name": "Second TikTok!", "platform": "tiktok", "daily_cap": 9999, "hashtags": "a, #b b"})
+        self.assertEqual(a["id"], "second-tiktok"); self.assertEqual(a["daily_cap"], 100); self.assertEqual(a["hashtags"], ["#a", "#b"])
+        self.assertNotEqual(accounts.profile_dir(a), accounts.profile_dir(accounts.get("main")))
+        self.assertTrue(str(accounts.profile_dir(accounts.get("main"))).endswith("tiktok_profile"))   # old login kept
+        self.assertEqual(accounts.get("yt")["daily_cap"], 5)                                            # conservative default
+        accounts.remove("second-tiktok")
+        with self.assertRaises(ValueError):
+            accounts.save_all([accounts.get("main")]); accounts.remove("main")
+
+    def test_rotation_and_account_hashtags(self):
+        self.assertEqual(accounts.rotation_pick({"main": 3, "alt": 1}), "alt")
+        self.assertEqual(accounts.rotation_pick({"main": 0, "alt": 0}, {"main": 50, "alt": 10}), "alt")
+        cid = self._clip("alt")
+        self.assertTrue(app.post_one(self.row(cid)))
+        acc_id, cap = self.calls[-1]
+        self.assertEqual(acc_id, "alt"); self.assertTrue(cap.split()[-4:][0].startswith("#"))
+        self.assertIn("#gta6", cap); self.assertIn("#mycampaign", cap)
+        self.assertEqual(self.row(cid)["account"], "alt")
+
+    def test_per_account_cap_skips_to_other_account(self):
+        stats = {"alt": {"today": 2, "last": time.time() - 7200}}
+        ok, why = app.account_ready(accounts.get("alt"), stats)
+        self.assertFalse(ok); self.assertIn("limita", why)
+        self.assertTrue(app.account_ready(accounts.get("main"), stats)[0])
+        ok, why = app.account_ready(accounts.get("main"), {"main": {"today": 0, "last": time.time() - 60}})
+        self.assertFalse(ok)                                    # own pace: 30 min minimum
+
+    def test_youtube_export_when_not_connected(self):
+        cid = self._clip("yt")
+        self.assertTrue(app.post_one(self.row(cid)))
+        r = self.row(cid)
+        self.assertEqual(r["status"], "exported")
+        out = list(accounts.export_dir(accounts.get("yt")).glob("*.txt"))
+        self.assertTrue(out); self.assertIn("#Shorts", out[0].read_text(encoding="utf-8"))
+
+    def test_clone_to_second_account(self):
+        cid = self._clip("main")
+        nid = db.clone_clip(cid, "alt")
+        self.assertEqual(self.row(nid)["account"], "alt"); self.assertNotEqual(self.row(nid)["file"], self.row(cid)["file"])
+
+    def test_youtube_api_upload_with_mock_server(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        seen = {}
+        class M(BaseHTTPRequestHandler):
+            def log_message(self, *a): pass
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length") or 0); body = self.rfile.read(n)
+                if self.path.startswith("/token"):
+                    seen["refresh"] = b"refresh_token=r1" in body
+                    out = json.dumps({"access_token": "a2", "expires_in": 3600}).encode()
+                    self.send_response(200); self.send_header("Content-Length", str(len(out))); self.end_headers(); self.wfile.write(out)
+                else:
+                    seen["auth"] = self.headers.get("Authorization"); seen["meta"] = json.loads(body)
+                    self.send_response(200); self.send_header("Location", f"http://127.0.0.1:{port}/put"); self.send_header("Content-Length", "0"); self.end_headers()
+            def do_PUT(self):
+                n = int(self.headers.get("Content-Length") or 0); seen["bytes"] = len(self.rfile.read(n))
+                out = b'{"id": "abc123"}'
+                self.send_response(200); self.send_header("Content-Length", str(len(out))); self.end_headers(); self.wfile.write(out)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), M); port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        sec = Path(util.DATA) / "client_secret_test.json"
+        sec.write_text(json.dumps({"installed": {"client_id": "cid", "client_secret": "cs"}}), encoding="utf-8")
+        util.save_settings({"youtube_client_secret": str(sec)})
+        o = (youtube_upload.TOKEN_URL, youtube_upload.UPLOAD_URL)
+        youtube_upload.TOKEN_URL = f"http://127.0.0.1:{port}/token"; youtube_upload.UPLOAD_URL = f"http://127.0.0.1:{port}/upload"
+        try:
+            acc = accounts.get("yt")
+            tf = accounts.token_file(acc); tf.parent.mkdir(parents=True, exist_ok=True)
+            util.save_json(tf, {"access_token": "old", "refresh_token": "r1", "expires_at": 0})
+            f = Path(util.DATA) / "yt.mp4"; f.write_bytes(b"v" * 1234)
+            ok, msg, url, mode = youtube_upload.upload(acc, f, "Ce moment nebun #gta6")
+            self.assertTrue(ok, msg); self.assertEqual(mode, "api"); self.assertEqual(url, "https://youtube.com/shorts/abc123")
+            self.assertTrue(seen["refresh"]); self.assertEqual(seen["auth"], "Bearer a2"); self.assertEqual(seen["bytes"], 1234)
+            self.assertIn("#Shorts", seen["meta"]["snippet"]["title"])
+            self.assertEqual(util.load_json(tf, {})["access_token"], "a2")
+            u = youtube_upload.auth_url("yt", 8777)
+            self.assertIn("youtube.upload", urllib.parse.unquote(u)); self.assertIn("127.0.0.1%3A8777", u)
+            accounts.clear_token(acc)
+            self.assertIsNone(youtube_upload.access_token(acc))       # really disconnected (no .bak fallback)
+        finally:
+            youtube_upload.TOKEN_URL, youtube_upload.UPLOAD_URL = o
+            util.save_settings({"youtube_client_secret": ""}); srv.shutdown()
+
+
+class T23SettingsAndUI(T7Web):
+    """General settings (performance/storage/general/updates), per-section reset, accounts API, RO dashboard in sync."""
+    @classmethod
+    def setUpClass(cls):
+        cls.port = 17000 + os.getpid() % 1000
+        cls.srv = web.serve(cls.port)
+
+    test_dashboard = None
+    def test_new_settings_validation_and_reset(self):
+        code, _ = self.req("/api/settings", {"encoder": "h265_magic"}); self.assertEqual(code, 400)
+        code, _ = self.req("/api/settings", {"whisper_device": "tpu"}); self.assertEqual(code, 400)
+        code, _ = self.req("/api/settings", {"max_parallel_renders": 9, "whisper_model": "small", "theme": "light",
+                                             "disk_budget_gb": 42, "auto_update": False, "channel_url": ""})
+        self.assertEqual(code, 200)
+        c = util.cfg()
+        self.assertEqual(c["max_parallel_renders"], 4); self.assertEqual(c["theme"], "light")   # clamped to 1-4
+        cid = db.add_clip(video_id="vidR", start=1, end=30, score=4, file=str(Path(util.DATA) / "r.mp4"), title="t", caption="t")
+        code, _ = self.req("/api/settings/reset", {"section": "performance"}); self.assertEqual(code, 200)
+        c = util.cfg()
+        self.assertEqual(c["max_parallel_renders"], 1); self.assertEqual(c["whisper_model"], "auto")
+        self.assertEqual(c["theme"], "light"); self.assertEqual(c["disk_budget_gb"], 42)          # other sections untouched
+        code, _ = self.req("/api/settings/reset", {"section": "nope"}); self.assertEqual(code, 400)
+        code, r = self.req("/api/settings/reset", {"section": "all"}); self.assertEqual(code, 200)
+        c = util.cfg()
+        self.assertEqual(c["theme"], "dark"); self.assertTrue(c["auto_update"]); self.assertFalse(c["onboarded"])
+        self.assertFalse(c["auto_post"])
+        self.assertEqual(db.q("SELECT status FROM clips WHERE id=?", (cid,), one=True)["status"], "pending")   # clips kept
+        self.assertTrue(accounts.all_accounts())                                                             # accounts kept
+        util.save_settings({"required_hashtag": "#mycampaign", "streamer_name": "Alex", "game": "GTA 6", "language": "ro",
+                            "manual_min_gap_minutes": 0})
+        db.x("UPDATE clips SET status='skipped' WHERE id=?", (cid,))
+
+    def test_system_and_accounts_api(self):
+        code, s = self.req("/api/system"); self.assertEqual(code, 200)
+        for k in ("cuda", "nvenc", "recommended", "summary", "sections", "autostart_supported"):
+            self.assertIn(k, s)
+        self.assertIn(s["recommended"]["whisper_device"], ("cuda", "cpu"))
+        code, r = self.req("/api/accounts", {"action": "save", "account": {"platform": "youtube", "name": "Shorts", "daily_cap": 3}})
+        self.assertEqual(code, 200); yid = r["account"]["id"]
+        code, r2 = self.req("/api/accounts", {"action": "save", "account": {"platform": "youtube", "name": "Shorts"}})
+        self.assertNotEqual(r2["account"]["id"], yid)                         # same name -> a NEW account, not an overwrite
+        code, lst = self.req("/api/accounts"); self.assertEqual(code, 200)
+        a = next(x for x in lst["accounts"] if x["id"] == yid)
+        self.assertEqual(a["mode"], "export"); self.assertFalse(lst["youtube_configured"])
+        cid = db.add_clip(video_id="vidAc", start=1, end=30, score=4, file=str(Path(util.DATA) / "ac.mp4"), title="t", caption="t #x")
+        code, _ = self.req("/api/clip", {"id": cid, "action": "set_account", "account": "nobody"}); self.assertEqual(code, 400)
+        code, _ = self.req("/api/clip", {"id": cid, "action": "post", "accounts": [yid, r2["account"]["id"]]}); self.assertEqual(code, 200)
+        rows = db.q("SELECT account, status FROM clips WHERE video_id='vidAc'")
+        self.assertEqual(sorted(r["account"] for r in rows), sorted([yid, r2["account"]["id"]]))
+        self.assertTrue(all(r["status"] == "queued" for r in rows))
+        code, lst = self.req("/api/clips?status=queue")
+        self.assertTrue(any(x.get("account_name") == "Shorts" for x in lst))
+        for i in (yid, r2["account"]["id"]):
+            code, _ = self.req("/api/accounts", {"action": "remove", "id": i, "delete_login": True}); self.assertEqual(code, 200)
+        self.assertEqual(db.q("SELECT COUNT(*) n FROM clips WHERE video_id='vidAc' AND account IS NOT NULL", one=True)["n"], 0)
+        db.x("UPDATE clips SET status='skipped' WHERE video_id='vidAc'")
+
+    def test_english_errors_and_ro_dashboard_in_sync(self):
+        util.save_settings({"ui_language": "en"})
+        code, r = self.req("/api/clip", {"id": 987654, "action": "post"}); self.assertEqual(r["error"], "clip not found")
+        repo = Path(__file__).resolve().parent.parent
+        sys.path.insert(0, str(repo / "tools"))
+        import make_ui_ro
+        ro = (repo / "streamclip" / "web" / "index.ro.html").read_text(encoding="utf-8")
+        self.assertEqual(ro, make_ui_ro.build(), "index.ro.html is out of date: run python tools/make_ui_ro.py")
+        self.assertIn('lang="ro"', ro); self.assertIn("Setări", ro)
+
+
+@unittest.skipUnless(HAS_FFMPEG, "needs ffmpeg")
+class T24ParallelRender(unittest.TestCase):
+    def test_two_renders_at_once_same_result(self):
+        from streamclip import layout as lay
+        src = Path(util.DATA) / "par.mp4"
+        wav = Path(util.DATA) / "par.wav"; sine_wav(wav, secs=120)
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=black:s=320x180:d=120", "-i", str(wav),
+                        "-shortest", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", str(src)], check=True)
+        seen = []
+        def fake_render(src_, s, e, words, hook, out, layout_, box, extra=None):
+            seen.append(threading.current_thread().name); time.sleep(0.3); Path(out).write_bytes(b"clip")
+        o = (render.render, pipeline.transcribe, lay.decide, pipeline._window, detect.find_moments)
+        real_find = detect.find_moments
+        def three(*a, **k):                     # 3 separate moments, whatever the detector thinks of this audio
+            m = real_find(*a, **k)[0]
+            return [dict(m, start=t, end=t + 28.0, peak=t + 5.0, score=5.0 - i) for i, t in enumerate((2.0, 42.0, 82.0))]
+        detect.find_moments = three
+        render.render = fake_render; pipeline.transcribe = lambda w: fake_words(120)
+        lay.decide = lambda *a, **k: ("blur", None)
+        pipeline._window = lambda c: (str(src), 0.0, 0.0, None)
+        util.save_settings({"max_parallel_renders": 2, "use_llm": False, "min_score": 0.5, "dedupe_similarity": 1.0})
+        try:
+            db.upsert_video("parvid", "t", "z", time.time(), "vod")
+            made = pipeline.process_chunk({"video_id": "parvid", "t0": 0, "t1": 120, "kind": "vod"})
+        finally:
+            render.render, pipeline.transcribe, lay.decide, pipeline._window, detect.find_moments = o
+            util.save_settings({"max_parallel_renders": 1, "dedupe_similarity": 0.8})
+        self.assertGreaterEqual(made, 2)
+        self.assertEqual(made, db.q("SELECT COUNT(*) n FROM clips WHERE video_id='parvid'", one=True)["n"])
+        self.assertTrue(all(n.startswith("render") for n in seen))          # ran in the render pool
+        db.x("UPDATE clips SET status='skipped' WHERE video_id='parvid'")
+
 
 if __name__ == "__main__":
     unittest.main()
