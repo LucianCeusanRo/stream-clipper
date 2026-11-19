@@ -1,7 +1,7 @@
 # Stream Clipper (română)
 
 Face din live-uri lungi (le-am făcut pentru live-urile de GTA 6) clipuri verticale scurte, cu subtitrare cuvânt-cu-cuvânt.
-Aplicație Windows, română implicit, rulează pe PC-ul tău, gratuită și open source (MIT). [English README](README.md) · [💬 Dezbatere: clipurile cu streameri sunt promovare gratuită sau luare din munca lor?](DISCUSSION_URL)
+Aplicație Windows, română implicit, rulează pe PC-ul tău, gratuită și open source (MIT). [English README](README.md) · [💬 Dezbatere: clipurile cu streameri sunt promovare gratuită sau luare din munca lor?](https://github.com/LucianCeusanRo/stream-clipper/discussions/1)
 
 > **Unealtă neoficială de fan, fără legătură cu Rockstar Games sau Take-Two.** Repo-ul nu conține imagini din joc, logo-uri sau mărci.
 

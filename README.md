@@ -12,7 +12,7 @@ Windows desktop app · Romanian speech by default · runs on your own PC · free
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 <a href="https://lucianceusanro.github.io/stream-clipper/">Website</a> ·
 <a href="README.ro.md">Română</a> ·
-<a href="DISCUSSION_URL">💬 Debate: clipping streamers, free promotion or taking their work?</a>
+<a href="https://github.com/LucianCeusanRo/stream-clipper/discussions/1">💬 Debate: clipping streamers, free promotion or taking their work?</a>
 </p>
 
 > **Unofficial fan tool, not affiliated with Rockstar Games or Take-Two.** No game footage, logos or trademarks are included in this repository.
