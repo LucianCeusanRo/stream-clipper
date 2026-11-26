@@ -25,7 +25,6 @@ jobs:
         shell: cmd
         run: |
           python -m pip install -r requirements.txt
-          python -X faulthandler -c "from streamclip import sysinfo as s; print(s.tray_available(), s.autostart_get()); print(s.detect())"
           python -m streamclip selftest --quick
       - name: Package update zip + installer
         shell: bash

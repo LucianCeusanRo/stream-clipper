@@ -252,7 +252,7 @@ def tool(name):
         return str(local)               # our own copy first (known to have NVENC)
     p = shutil.which(name)
     if not p:
-        raise SystemExit(f"{name} nu a fost gasit. Ruleaza setup.bat (instaleaza ffmpeg).")
+        raise RuntimeError(f"{name} nu a fost gasit. Ruleaza setup.bat (instaleaza ffmpeg).")
     return p
 
 
