@@ -622,7 +622,7 @@ def run_forever(post=True):
             from . import channels
             n = sum(1 for ch in channels.load() if ch["enabled"])
             STATUS["watcher"] = (f"watching {n} Kick/Twitch channel(s) (Channels)" if n else
-                                 "niciun canal setat (Setari -> Canal urmarit); poti genera clipuri din orice link")
+                                 "niciun canal setat (adauga unul in Canale); poti genera clipuri din orice link")
             sleep_until(STOP, 5); continue
         STATUS["watcher"] = "verific daca canalul e live..."
         try:

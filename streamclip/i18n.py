@@ -51,7 +51,7 @@ _RULES = [(re.compile(a, re.I), b) for a, b in [
     (r"^astept$", "waiting"),
     (r"^pornesc$", "starting"),
     (r"^oprit \(apasa Start\)$", "stopped (press Start)"),
-    (r"^niciun canal setat.*$", "no channel set (Settings); you can still generate clips from any link"),
+    (r"^niciun canal setat.*$", "no channel yet (add one in Channels); you can still make clips from any link"),
     (r"^verific daca canalul e live\.\.\.$", "checking if the channel is live..."),
     (r"^inregistrez: ", "recording: "),
     (r"^canalul nu e live acum, verific din nou in curand$", "channel not live, checking again soon"),

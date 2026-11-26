@@ -110,6 +110,7 @@ pre{background:#07090c;color:#d1d5db;border:1px solid var(--line);border-radius:
 .cstate{font-size:12px;display:inline-flex;align-items:center;gap:5px}.cstate i{width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block}.cstate.on i{background:var(--ok)}.cstate.exp i{background:var(--warn)}
 /* ---------- dialogs ---------- */
 .ov{position:fixed;inset:0;background:rgba(5,7,10,.72);display:none;align-items:center;justify-content:center;z-index:40;backdrop-filter:blur(2px)}.ov.open{display:flex}
+#cfOv{z-index:60}
 .dlg{background:var(--card);border:1px solid var(--line2);border-radius:16px;box-shadow:var(--shadow);width:min(560px,94vw);max-height:90vh;overflow:auto}
 .dlg .dh{padding:16px 20px 6px;display:flex;align-items:center;gap:10px}.dlg .dh h3{margin:0;font-size:17px}.dlg .db{padding:6px 20px 10px}.dlg .df{padding:12px 20px 16px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--line)}
 .dlg .db label.ck{display:flex;gap:9px;align-items:flex-start;margin:9px 0;cursor:pointer}.dlg .db .fl2{display:flex;flex-direction:column;gap:4px;margin:10px 0}.dlg .db .fl2 span{font-size:12.5px;color:var(--mut)}
@@ -368,7 +369,7 @@ async function clipsPage(v){await loadStyles();
     v.innerHTML=tools+(filtered?empty('🔎','No clips match these filters','Lower the minimum viral chance or show all styles.',`<button onclick="MV=0;STY='';localStorage.setItem('sc_mv',0);localStorage.setItem('sc_sty','');render()">Clear filters</button>`)
      :CLIPF==='skipped'?empty('⏭','Nothing skipped','Clips you skip land here. You can restore them any time.')
      :empty('🎬',total?'No new clips right now':'No clips yet','Paste a link to a stream or VOD and the app cuts the best moments. Or add a channel to watch and clips are made by themselves when it goes live.',
-       `<button class="pri" onclick="newClipDlg()">✂️ Paste a link</button> <button onclick="go('settings','clipping')">👁 Watch a channel</button>`));return}
+       `<button class="pri" onclick="newClipDlg()">✂️ Paste a link</button> <button onclick="go('channels')">📡 Watch a channel</button>`));return}
   v.innerHTML=tools+'<div class="grid">'+list.map(c=>card(c,'clips')).join('')+'</div>'}
 function empty(ic,t,p,btn){return `<div class="empty"><div class="big">${ic}</div><h3>${t}</h3><p>${p}</p>${btn||''}</div>`}
 function gameBox(c){return `<input class="sm" style="width:100%;box-sizing:border-box;font-size:12px;padding:5px 8px;margin:4px 0;background:#0d0f14;color:#e9edf3;border:1px solid #2a3140;border-radius:6px" value="${esc(c.game||'')}" placeholder="🎮 Game: auto-detected (type to change)" title="Game used in this clip's title and hashtags (never on the video). Empty = detected from the stream; unknown = neutral #gaming #clips" onchange="setGame(${c.id},this.value)">`}
@@ -468,8 +469,8 @@ const CHS={recording:['🔴','Recording live','on'],offline:['⚪','Offline – 
 async function channelsPage(v){const d=await api('/api/channels');$('#n_ch').textContent=d.channels.length||'';
   $('#pacts').innerHTML='';
   v.innerHTML=`<div class="note">Add a <b>Kick</b> or <b>Twitch</b> channel. Stream Clipper checks it every ${Math.round(d.every/60*10)/10} min while it runs (also minimized to the tray), records automatically when the channel goes live, stops when the live ends, and turns it into clips in <b>Clips</b>. Nothing is posted unless you post it (or turn on Auto-post).${d.watching?'':' <b>Watching is stopped</b> – press <i>Start watching</i> (bottom left).'}</div>
-  <div class="card" style="display:flex;gap:8px;align-items:center"><input id="chIn" placeholder="kick.com/name  or  twitch.tv/name" style="flex:1" onkeydown="if(event.key==='Enter')chAdd()"><button class="pri" onclick="chAdd()">➕ Add channel</button></div>
-  <div class="accs">${d.channels.map(c=>{const [ic,lb,cl]=CHS[c.status]||CHS.checking;
+  <div class="card"><div class="row"><input type="text" id="chIn" class="bigin" placeholder="kick.com/name  or  twitch.tv/name – then press Enter" onkeydown="if(event.key==='Enter')chAdd()"><button class="pri" onclick="chAdd()">➕ Add channel</button></div></div>
+  <div class="accs" style="margin-top:12px">${d.channels.map(c=>{const [ic,lb,cl]=CHS[c.status]||CHS.checking;
     return `<div class="acc ${c.enabled?'':'off'}"><div class="hd"><div class="pl ${c.platform}">${c.platform==='kick'?'K':'T'}</div><div><div class="nm">${esc(c.name)}</div><div class="muted" style="font-size:12px">${c.platform==='kick'?'Kick':'Twitch'} · <span class="cstate ${cl}"><i></i>${ic} ${lb}</span></div></div><span class="sp"></span>
      <div class="sw ${c.enabled?'on':''}" style="padding:4px 8px" onclick="chEnable('${c.key}',${!c.enabled})" data-tip="${c.enabled?'Enabled – click to stop watching this channel':'Disabled – click to watch it again'}"><span class="knob"></span></div></div>
      ${c.title?`<div style="font-size:12.5px">${esc(c.title)}${c.game?` · <b>${esc(c.game)}</b>`:''}</div>`:''}
