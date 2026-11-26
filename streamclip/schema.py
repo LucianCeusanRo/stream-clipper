@@ -30,10 +30,10 @@ CHOICE = {
     "post_preset": ("sigur", "normal", "agresiv", "personalizat"), "browser_channel": ("chrome", "msedge", "chromium", ""),
     "memory_mode": ("auto", "low", "normal"),
 }
-BOOL = ("backfill_from_start", "use_llm", "llm_fix_transcript", "auto_cam", "overlay_texts", "censor_swears", "auto_post",
+BOOL = ("twitch_clips_auto", "stream_card", "stream_card_viewers", "stream_card_followers", "stream_card_link", "backfill_from_start", "use_llm", "llm_fix_transcript", "auto_cam", "overlay_texts", "censor_swears", "auto_post",
         "headless", "delete_after_post", "auto_update", "check_updates", "start_with_windows", "minimize_to_tray",
         "notifications", "onboarded", "rotate")
-LIST = ("extra_urls", "extra_keywords", "hashtags", "extra_hashtags", "quiet_hours", "cam_box", "rotate_accounts")
+LIST = ("extra_urls", "extra_keywords", "hashtags", "extra_hashtags", "quiet_hours", "cam_box", "rotate_accounts", "twitch_clip_channels")
 
 
 def _num(k, v):

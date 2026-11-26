@@ -1557,7 +1557,7 @@ class T26SettingsSchema(_Web, unittest.TestCase):
         ex = yaml.safe_load((Path(__file__).resolve().parent.parent / "config.example.yaml").read_text(encoding="utf-8"))
         known = set(schema.NUM) | set(schema.CHOICE) | set(schema.BOOL) | set(schema.LIST) | {
             "language", "channel_url", "streamer_name", "game", "live_title_filter", "youtube_cookies_from_browser",
-            "youtube_cookies_file", "initial_prompt", "caption_font", "credit_text", "required_hashtag", "caption_template",
+            "youtube_cookies_file", "initial_prompt", "caption_font", "credit_text", "twitch_client_id", "required_hashtag", "caption_template",
             "effects", "youtube_client_secret"}
         self.assertEqual(sorted(set(ex) - known), [])
         for k, v in ex.items():
@@ -1695,3 +1695,180 @@ class T28Memory(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class T29StreamCard(unittest.TestCase):
+    """Stream card: real numbers only (missing = hidden), link before hashtags, never blocks posting."""
+    def setUp(self):
+        from streamclip import streamcard
+        self.sc = streamcard; streamcard._cache.clear()
+        util.save_settings({"stream_card": True, "stream_card_link": True, "stream_card_viewers": True, "stream_card_followers": True,
+                            "language": "en"})
+
+    def tearDown(self):
+        util.save_settings({"language": "ro"})
+
+    def test_source_detection(self):
+        db.upsert_video("job-x1", "t", "kick:gs-xx", time.time(), "file")
+        db.upsert_video("job-x2", "t", "manual", time.time(), "file")
+        self.assertEqual(self.sc.source({"video_id": "job-x1"}), ("kick", "gs-xx"))
+        self.assertEqual(self.sc.source({"video_id": "twitch-shroud-123"}), ("twitch", "shroud"))
+        self.assertEqual(self.sc.source({"video_id": "kick-gs-xx-99"}), ("kick", "gs-xx"))
+        self.assertIsNone(self.sc.source({"video_id": "job-x2"}))
+        self.assertIsNone(self.sc.source({"video_id": "dQw4w9WgXcQ"}))
+
+    def test_real_numbers_only(self):
+        from unittest import mock
+        with mock.patch.object(self.sc.platforms, "_get", return_value={"followers_count": "32799", "livestream": None}):
+            st = self.sc.stats("kick", "a")
+        self.assertEqual(st, {"live": False, "viewers": None, "followers": 32799, "game": ""})
+        with mock.patch.object(self.sc.platforms, "_get", return_value={"livestream": {"is_live": True, "viewer_count": 808}}):
+            st = self.sc.stats("kick", "b")
+        self.assertEqual((st["live"], st["viewers"], st["followers"]), (True, 808, None))   # no follower number -> hidden
+        with mock.patch.object(self.sc.platforms, "_gql", side_effect=self.sc.platforms.PlatformError("down")):
+            st = self.sc.stats("twitch", "c")
+        self.assertEqual((st["viewers"], st["followers"]), (None, None))                    # API down -> nothing guessed
+        self.assertEqual(self.sc.num(1234567), "1,234,567")
+
+    def test_card_png_fits_safe_area(self):
+        from PIL import Image
+        out = util.DATA / "card_test.png"
+        self.sc.card_png("twitch", "x" * 60, {"live": True, "viewers": 10 ** 9, "followers": 10 ** 9, "game": "G" * 40}, out)
+        im = Image.open(out)
+        self.assertLessEqual(self.sc.X + im.width, 920)          # clear of TikTok's right-hand buttons
+        self.assertGreaterEqual(self.sc.Y, 150)                  # below the top tabs
+        self.assertLess(self.sc.Y + im.height, 1300)             # far above the captions / description
+
+    def test_caption_link_and_off_switch(self):
+        c = self.sc.caption_with_link("“No way” 😳 🎮 CS2 #CS2 #clips", "kick", "gs-xx")
+        self.assertEqual(c, "“No way” 😳 🎮 CS2 🔴 Watch live: https://kick.com/gs-xx #CS2 #clips")
+        self.assertEqual(self.sc.caption_with_link(c, "kick", "gs-xx"), c)          # only once
+        db.upsert_video("job-x3", "t", "kick:gs-xx", time.time(), "file")
+        clip = {"video_id": "job-x3", "file": str(util.DATA / "missing.mp4")}
+        util.save_settings({"stream_card": False})
+        self.assertEqual(self.sc.apply(clip, "hi #a"), (Path(clip["file"]), "hi #a"))
+        util.save_settings({"stream_card": True})
+        self.sc._cache[("kick", "gs-xx")] = (time.time(), {"live": False, "viewers": None, "followers": 5, "game": ""})
+        v, cap = self.sc.apply(clip, "hi #a")                    # ffmpeg fails on a missing file -> original, still posts
+        self.assertEqual(v, Path(clip["file"])); self.assertIn("kick.com/gs-xx", cap)
+
+
+class T30SpokenCaption(unittest.TestCase):
+    def test_title_is_the_streamers_words(self):
+        util.save_settings({"language": "en"})
+        try:
+            words = [{"w": w, "s": i * 0.3, "e": i * 0.3 + 0.25} for i, w in enumerate("ok so. no way he hit that from there! anyway".split())]
+            hook, title, cat = texts.make({"cats": ["exclamatie"], "peak": 2.0, "start": 0}, words)
+            self.assertEqual(title, "\u201cNo way he hit that from there!\u201d 😳")
+            self.assertNotIn("Watch till the end", str(texts.TITLES_EN))
+            cap = pipeline.build_caption(title, game="The Finals")
+            self.assertIn("🎮 The Finals", cap); self.assertTrue(cap.startswith("\u201cNo way"))
+        finally:
+            util.save_settings({"language": "ro"})
+
+
+class T31Multistream(_Web, unittest.TestCase):
+    """Own live only: input fixed to 127.0.0.1, platform ingest servers only, keys never in files or logs."""
+    port_base = 23000
+
+    def setUp(self):
+        from streamclip import multistream
+        self.ms = multistream; multistream.FILE.unlink(missing_ok=True)
+        self.keys = {}
+        self._kr = multistream._keyring
+        store = self.keys
+
+        class FakeKR:
+            def set_password(self, s, k, v): store[k] = v
+            def get_password(self, s, k): return store.get(k)
+            def delete_password(self, s, k): store.pop(k, None)
+        multistream._keyring = lambda: FakeKR()
+
+    def tearDown(self):
+        self.ms.stop(); self.ms._keyring = self._kr
+
+    def test_input_is_always_local(self):
+        d = self.ms.load()
+        self.ms.set_key("youtube", "abcd-1234")
+        d = self.ms.update(dests={"youtube": {"enabled": True}})
+        cmd = self.ms.command(d, self.ms.targets(d))
+        i = cmd[cmd.index("-i") + 1]
+        self.assertTrue(i.startswith("rtmp://127.0.0.1:"), i)
+        self.assertIn("rtmp://a.rtmp.youtube.com/live2/abcd-1234", cmd[-1])
+        self.assertIn("onfail=ignore", cmd[-1])
+        self.assertNotIn("abcd-1234", self.ms.FILE.read_text())                    # key not in the settings file
+        self.assertNotIn("abcd-1234", json.dumps(self.ms.status()))                # nor in the API
+        self.assertEqual(self.ms.mask("x abcd-1234 y", ["abcd-1234"]), "x •••• y")
+
+    def test_rejects_foreign_servers_and_bad_keys(self):
+        for dest, url in (("youtube", "rtmp://evil.example.com/live2"), ("twitch", "https://twitch.tv/app"),
+                          ("kick", "rtmp://kick.com.evil.net/app")):
+            with self.assertRaises(self.ms.MsError):
+                self.ms.update(dests={dest: {"server": url, "enabled": True}})
+        self.ms.update(dests={"kick": {"server": "rtmps://fa723fc1b171.global-contribute.live-video.net/app", "enabled": True}})
+        with self.assertRaises(self.ms.MsError):
+            self.ms.targets(self.ms.load())                                       # enabled but no key yet
+        with self.assertRaises(self.ms.MsError):
+            self.ms.set_key("kick", "has space")
+
+    def test_web_api(self):
+        code, j = self.req("/api/multistream", {"action": "start"})
+        self.assertEqual(code, 400)
+        code, j = self.req("/api/multistream", {"action": "key", "id": "twitch", "key": "live_123_abc"})
+        self.assertEqual(code, 200); self.assertTrue(next(x for x in j["dests"] if x["id"] == "twitch")["has_key"])
+        self.assertNotIn("live_123_abc", json.dumps(j))
+        code, j = self.req("/api/multistream", {"action": "save", "source": "https://kick.com/someone", "dests": {}})
+        self.assertEqual(code, 200)                                               # a 'source' is simply ignored
+        self.assertTrue(j["obs_server"].startswith("rtmp://127.0.0.1:"))
+
+
+class T32PlatformsHonest(unittest.TestCase):
+    """Twitch native clips (mocked Helix), Kick export-only, encrypted token files."""
+    def test_twitch_clip_from_vod_own_channel_only(self):
+        from streamclip import twitch_clips as tc, secretstore
+        util.save_settings({"twitch_client_id": "abcdefghij0123456789", "twitch_clip_channels": []})
+        secretstore.save_json(tc.TOKEN, {"access_token": "AT", "refresh_token": "RT", "expires_at": time.time() + 999,
+                                          "login": "me_live", "user_id": "42"})
+        calls = []
+
+        def fake(method, url, **kw):
+            calls.append((method, url, kw.get("params")))
+            if url.endswith("/users"):
+                return 200, {"data": [{"id": "42"}]}
+            if url.endswith("/videos"):
+                return 200, {"data": [{"id": "999", "stream_id": "777"}]}
+            if url.endswith("/videos/clips"):
+                return 202, {"data": [{"id": "Clip1", "edit_url": "https://clips.twitch.tv/Clip1/edit"}]}
+            return 404, {}
+        o = tc._req; tc._req = fake
+        try:
+            r = tc.create({"video_id": "twitch-me_live-777", "start": 100.0, "end": 125.5, "title": "“No way” 😳 #cs2", "hook": ""})
+            self.assertEqual(r["id"], "Clip1")
+            p = calls[-1][2]
+            self.assertEqual((p["vod_id"], p["vod_offset"], p["duration"], p["editor_id"], p["broadcaster_id"]), ("999", 126, 25.5, "42", "42"))
+            self.assertNotIn("#", p["title"])
+            with self.assertRaises(tc.TwitchError):                  # someone else's channel: refused before any API call
+                n = len(calls); tc.create({"video_id": "twitch-shroud-1", "start": 0, "end": 20, "title": "x", "hook": ""})
+            self.assertEqual(len(calls), n)
+            util.save_settings({"twitch_clip_channels": ["shroud"]})   # listed as editor -> allowed
+            self.assertIn("shroud", tc.allowed("me_live"))
+        finally:
+            tc._req = o; tc.TOKEN.unlink(missing_ok=True); util.save_settings({"twitch_clip_channels": [], "twitch_client_id": ""})
+
+    def test_kick_is_export_only(self):
+        self.assertIn("kick", accounts.PLATFORMS)
+        self.assertIn("kick", accounts.EXPORT_ONLY)
+        self.assertEqual(accounts.public({"id": "k", "platform": "kick", "name": "K"})["mode"], "export")
+
+    def test_token_files_never_plain_on_windows(self):
+        from streamclip import secretstore
+        f = util.DATA / "sec_test.json"
+        secretstore.save_json(f, {"refresh_token": "TOPSECRET"})
+        raw = f.read_text()
+        if os.name == "nt":
+            self.assertTrue(raw.startswith("dpapi:")); self.assertNotIn("TOPSECRET", raw)
+        self.assertEqual(secretstore.load_json(f), {"refresh_token": "TOPSECRET"})
+        f.write_text('{"refresh_token": "OLD"}')                          # legacy plain file still loads
+        self.assertEqual(secretstore.load_json(f)["refresh_token"], "OLD")
+        if os.name == "nt":
+            self.assertTrue(f.read_text().startswith("dpapi:"))           # ...and is re-saved encrypted

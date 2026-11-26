@@ -140,7 +140,7 @@ def poll_once(now=None, status_fn=None, start_fn=None):
 
 
 def start_recording(c, s, vid):
-    db.upsert_video(vid, (s.get("title") or c["name"])[:120], c["name"], s.get("started") or time.time(), "live")
+    db.upsert_video(vid, (s.get("title") or c["name"])[:120], f"{c['platform']}:{c['name']}", s.get("started") or time.time(), "live")
     if s.get("game"):
         game.remember(vid, game.normalize(s["game"]), c["platform"])
     folder = DATA / vid

@@ -11,7 +11,9 @@ Aplicație Windows, rulează pe PC-ul tău, gratuită și open source (MIT). [En
 
 Urmărește un canal de YouTube (sau primește orice link / fișier), înregistrează live-ul, transcrie româna cu Whisper, caută momentele cu râs, țipete, nervi sau reacții tari și le face clipuri 9:16 (15–45 s) cu subtitrări mari. Tu vezi fiecare clip în aplicație și decizi ce se postează.
 
-Nou în v1.3.3: **Canale Kick/Twitch** urmărite automat (înregistrează singur când intră live), **Rotație** între conturi TikTok / YouTube Shorts / Facebook Reels (doar export) cu limită zilnică și pauză per cont, **mod RAM redus** pentru PC-uri slabe, alegerea copertei clipului.
+Nou în v1.4.0: **card de stream** pe clipuri (logo Kick/Twitch, 🔴 LIVE, 👀 spectatori, 👥 urmăritori, doar numere reale), **multistream** pentru live-ul tău (OBS → YouTube + Twitch + Kick, local și gratuit, chei criptate), **clipuri native Twitch** (API oficial, doar canalul tău sau unde ești editor), Kick doar export (nu are API public), galerie cu previzualizare.
+
+În v1.3.3: **Canale Kick/Twitch** urmărite automat (înregistrează singur când intră live), **Rotație** între conturi TikTok / YouTube Shorts / Facebook Reels (doar export) cu limită zilnică și pauză per cont, **mod RAM redus** pentru PC-uri slabe, alegerea copertei clipului.
 
 Sunt începător și învăț programare. Proiectul e **făcut cu ajutorul AI la cod**, apoi testat și reparat rulându-l. Merge pe PC-ul meu; nu e un produs comercial finisat.
 

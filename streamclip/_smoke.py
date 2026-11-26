@@ -8,6 +8,7 @@ Run: python -m streamclip smoke [--real-whisper]
 - Checks: clips exist, are 1080x1920 at 30/60 fps, 10-60 s, have audio + a thumbnail; every GET route answers,
   safe POST routes work, no HTTP 500, no "Traceback" in the log, no exception in any thread.
 """
+from pathlib import Path
 import json, os, subprocess, sys, threading, time, urllib.error, urllib.request
 
 assert os.environ.get("CLIPPER_HOME"), "run through `python -m streamclip smoke`"
@@ -112,6 +113,18 @@ def main(real_whisper=False):
               f"clip #{c['id']} has a cover (auto: payoff moment) + gallery thumbnail")
         check("GTA" not in (c["caption"] or "") + (c["hook"] or ""), f"clip #{c['id']} caption has no made-up game")
 
+    if clips:
+        print("stream card (mocked Kick stats):")
+        from . import streamcard
+        db.x("UPDATE videos SET channel=? WHERE id=?", ("kick:smoketest", clips[0]["video_id"]))
+        streamcard._cache[("kick", "smoketest")] = (time.time(), {"live": True, "viewers": 1234, "followers": 56789, "game": "The Finals"})
+        vid, cap = streamcard.apply(db.q("SELECT * FROM clips WHERE id=?", (clips[0]["id"],), one=True), "Nice one #gaming")
+        p = probe(str(vid))
+        v = next((s for s in p.get("streams", []) if s.get("codec_type") == "video"), {})
+        check(str(vid).endswith(".card.mp4") and (v.get("width"), v.get("height")) == (1080, 1920)
+              and any(s.get("codec_type") == "audio" for s in p.get("streams", [])), f"card overlay -> {Path(vid).name} 1080x1920 + audio")
+        check(cap.startswith("Nice one 🔴") and cap.endswith("https://kick.com/smoketest #gaming"), f"channel link before hashtags: {cap}")
+
     print("channels + rotation (mocked):")
     channels.add("kick.com/smoketest")
     started = []
@@ -131,7 +144,7 @@ def main(real_whisper=False):
     gets = ["/", "/index.html", "/static/icon.png", "/api/state", "/api/styles", "/api/progress", "/api/version",
             "/api/clips", "/api/clips?status=queue&sort=plan", "/api/clips?status=posted", "/api/clips?status=all&sort=new",
             "/api/settings", "/api/jobs", "/api/log?n=50", "/api/tiktok",
-            "/api/accounts", "/api/schedule", "/api/channels", "/api/system"]
+            "/api/accounts", "/api/schedule", "/api/channels", "/api/system", "/api/multistream"]
     gets += [f"/media/{cid}/thumb", f"/media/{cid}/video"] if cid else []
     for g in gets:
         code = http(port, g)
@@ -145,6 +158,9 @@ def main(real_whisper=False):
              ("/api/channels", {"action": "add", "channel": "not a channel"}, 400),
              ("/api/channels", {"action": "remove", "key": "twitch:smoke_two"}, 200),
              ("/api/accounts", {"action": "save", "account": {"name": "Smoke FB", "platform": "facebook"}}, 200),
+             ("/api/multistream", {"action": "save", "dests": {"youtube": {"server": "rtmp://evil.example.com/x", "enabled": True}}}, 400),
+             ("/api/multistream", {"action": "start"}, 400),           # nothing enabled / no keys -> clear error, no crash
+             ("/api/multistream", {"action": "stop"}, 200),
              ("/api/job", {"source": "", "clips": 1}, 400)]
     if cid:
         posts += [("/api/clip", {"id": cid, "action": "set_game", "game": "The Finals"}, 200),

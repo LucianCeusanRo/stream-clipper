@@ -197,7 +197,12 @@ def _run(j):
     if b - a < 20:
         raise RuntimeError("materialul e prea scurt (sub 20 s)")
     vid = "job-" + j["id"]
-    db.upsert_video(vid, title[:120], "manual", time.time(), "file")
+    try:                                                 # remember the Kick/Twitch channel for the stream card
+        plat, name = platforms.parse_channel(j["source"])
+        chan = f"{plat}:{name}"
+    except Exception:
+        chan = "manual"
+    db.upsert_video(vid, title[:120], chan, time.time(), "file")
     size = cfg().get("chunk_minutes", 5) * 60
     n_chunks = max(1, math.ceil((b - a) / size))
     over = {"clips_per_chunk_max": max(1, math.ceil(j["clips"] / n_chunks)) + 1,

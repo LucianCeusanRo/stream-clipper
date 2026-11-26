@@ -81,6 +81,17 @@ rotate: true                      # clips without a chosen account take turns ov
                                   # own daily cap + minutes between posts respected, never the same clip twice on one account).
                                   # false = they all go to the first enabled account
 rotate_accounts: []               # account ids that take part in the rotation; empty = every enabled account marked "rotation"
+# Stream card on clips from Kick/Twitch (added when a clip is posted or exported): logo, channel name, 🔴 LIVE +
+# 👀 viewers while live, 👥 followers. Only real numbers from Kick/Twitch; a missing number is left out, never guessed.
+stream_card: true
+stream_card_viewers: true          # show the live viewer count (only while the channel is live)
+stream_card_followers: true        # show the follower count
+stream_card_link: true             # put the channel link (kick.com/name, twitch.tv/name) in the description
+# Native Twitch clips of the highlights (official Helix "Create Clip From VOD", beta): only your channel or channels
+# where you are an editor. Needs your own free Twitch app (dev.twitch.tv, Client type: Public). Token stored encrypted.
+twitch_client_id: ""
+twitch_clips_auto: false           # make a Twitch clip for every highlight from your Twitch lives
+twitch_clip_channels: []           # extra channels where you are an editor (your own channel is always included)
 quiet_hours: []                   # e.g. [3, 4, 5, 6] = no automatic posts between 03:00 and 06:59
 post_order: "viral_first"         # viral_first = highest viral chance first; newest_first = newest first
 auto_post_min_viral: 40           # auto-post only posts clips with viral chance >= 40% (clips you approve with Post always go)

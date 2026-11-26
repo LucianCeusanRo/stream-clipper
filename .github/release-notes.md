@@ -1,16 +1,14 @@
-**Stream Clipper v1.3.3: clip Kick, Twitch and YouTube streams into Shorts and TikToks.** Any streamer, game or language.
+**Stream Clipper v1.4.0: stream card, multistream for your own live, native Twitch clips.**
 
-**⬇ Windows: download `StreamClipper-Setup.exe` and run it. Say Yes to the administrator prompt, then Next → Next → Install.**
+**⬇ Windows: download `StreamClipper-Setup.exe` and run it** (say Yes to the administrator prompt). If you already have it installed, the app updates itself.
 
-- **Runs as administrator.** On some PCs parts of the setup failed without admin. The installer now runs as admin, turns on Windows long-path support (deep pip paths caused "file not found" errors) and creates a "Stream Clipper" scheduled task with highest privileges. Shortcuts, autostart and the post-install Launch start the app elevated **without a UAC prompt over your game**. Updates keep working (they run inside the elevated app). Want no admin? Put an empty `no-admin.txt` next to `Stream Clipper.exe`.
-- **New: Channels.** Add Kick or Twitch channels. Each one is checked every 90 s (also from the tray). It records when the channel goes live, stops when the live ends and makes clips. Offline channels stay quiet, and errors or rate limits back off (1 → 30 min).
-- **Fixed: Kick videos.** Kick changed its site and yt-dlp's Kick extractor broke ("NOT_FOUND"). Kick links now use Kick's public API (with yt-dlp as fallback), and error messages are short and readable.
-- **New: Rotate posting.** Queued clips take turns across your TikTok / YouTube Shorts / Facebook Reels accounts. Each account keeps its own daily cap and minutes between posts, and the same clip never goes twice to one account. The planned schedule is shown in Queue. Auto-post stays **OFF** by default and nothing posts without your OK. Facebook Reels is **export only** (clip + caption + cover saved for a manual upload).
-- **Uses less RAM.** Default speech model is `small` in int8 (`base` on PCs under 8 GB). A low-memory mode (auto under 12 GB RAM) handles one clip at a time, the model is freed after 10 idle minutes (~0.2 GB idle), and there is an optional RAM cap.
-- **Cover frames.** The cover is the payoff moment by default, and you can pick any frame in the player.
-- **No pop-ups over games.** The posting browser opens off-screen, no console windows appear, and audio re-syncs after Twitch ad breaks.
-- **GPU fallback.** A CUDA/cuDNN error during transcription (e.g. GTX 10xx with new cuDNN) switches to the CPU instead of failing every chunk.
-- **Every setting is validated** (types and ranges). A typo in config.yaml falls back to the default with a log line instead of crashing.
-- New smoke test (full pipeline on a generated sample + every web route, fails on any traceback) runs in CI on Linux and Windows and before every release.
+- 🪪 **Stream card on posted and exported clips** from Kick or Twitch: logo, channel name, 🔴 LIVE and 👀 viewers while the channel is live, and 👥 followers. The numbers come straight from Kick or Twitch; anything missing is left out, never estimated. The card sits top-left, clear of TikTok's buttons, and appears after the hook. The channel link goes in the description. Each part can be switched off in Settings → Posting.
+- 🗣️ **Titles in the streamer's own words.** The post title is now a line the streamer actually said in that clip, plus one emoji and 🎮 the real game. Generic lines like "Watch till the end" are gone. On-video captions are unchanged (no longer than before).
+- 📡 **Multistream (your own live only).** Point OBS at `rtmp://127.0.0.1:1935/live` and the app sends the same stream to YouTube, Twitch and Kick at once. It's local and free, with no re-encode. Stream keys are encrypted by Windows (Credential Manager / DPAPI) and never written to files or logs. The relay only accepts OBS on your PC, so it can't restream someone else's channel.
+- 🟣 **Native Twitch clips.** Highlights can become real Twitch clips through Twitch's official API ("Create Clip From VOD", still in beta at Twitch). It only works on your channel or channels where you're an editor. You sign in with a code on twitch.tv/activate and need your own free Twitch app (Client ID). There's a 🟣 button in the player, and an automatic option that's off by default.
+- ▶️ **YouTube Shorts** keeps using the official YouTube Data API. OAuth tokens are now stored encrypted (old token files are converted automatically).
+- 🟢 **Kick accounts are export only.** Kick has no public upload or clip API, so the clip and caption are saved to Exports and an "Open Kick" button takes you there. No scraping, no unofficial uploads.
+- 🎞️ **Gallery**: hover a clip to preview it. Every clip shows its status (👀 to review, ⏳ queued, ✅ posted, 📦 exported) and the account it went to.
+- Everything from v1.3.3 still works the same: auto-post stays off and nothing goes out without your OK.
 
-Unofficial fan tool, not affiliated with Rockstar Games or Take-Two. Built by a beginner with AI-assisted coding; limits are in the README.
+Unofficial fan tool, not affiliated with Rockstar Games, Take-Two, Kick, Twitch, YouTube or TikTok. Built by a beginner with AI-assisted coding; limits are in the README.

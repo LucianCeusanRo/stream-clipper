@@ -75,8 +75,15 @@ Clips are someone else's work. Please:
 - 💬 **Captions that pop**: 1–3 word groups, the current word highlighted, keyword colours, a hook line only when the streamer really shouted something (their own words, never a game name), 6 bundled fonts.
 - ✨ **Effects** (each can be turned off): emoji pop-ups, punch-in zoom on peaks, light shake on rage, original sound effects, loudness normalised to −14 LUFS.
 - ✂️ **Review and edit**: viral-chance estimate with the reasons, editable title/description, "New text" button, re-cut ±1 s snapped to sentence edges.
-- 📤 **Optional posting, off by default**: TikTok (TikTok Studio website, your own login), YouTube Shorts (official API) and Facebook Reels (export only). Nothing posts unless you press Post or turn on Auto-post. **Rotate** spreads queued clips over your accounts in turn, with each account's daily cap and minutes between posts, never the same clip twice on one account; the planned schedule is shown in **Queue**.
+- 📤 **Optional posting, off by default**: TikTok (TikTok Studio website, your own login), YouTube Shorts (official API), Facebook Reels and Kick (export only). Nothing posts unless you press Post or turn on Auto-post. **Rotate** spreads queued clips over your accounts in turn, with each account's daily cap and minutes between posts, never the same clip twice on one account; the planned schedule is shown in **Queue**.
 - 🖼️ **Cover frames**: the cover is the payoff moment by default; pick any other frame in the player.
+- 🪪 **Stream card** (v1.4.0): clips from Kick or Twitch get a small card when they're posted or exported. It shows the logo, the channel name, 🔴 LIVE and 👀 viewers while the channel is live, and 👥 followers. Numbers come straight from Kick's public API or Twitch. If a number isn't available it's left out, never estimated. The card sits top-left, clear of TikTok's buttons, and the channel link goes in the description. On-video captions stay the streamer's own words.
+- 🗣️ **Captions in the streamer's words**: the post title is a line the streamer actually said in the clip (plus one emoji and the real game). Template titles are only a fallback.
+- 📡 **Multistream your own live** (v1.4.0): OBS streams to a relay on your PC (`rtmp://127.0.0.1:1935/live`), which forwards the same stream to YouTube, Twitch and Kick together. It's free and local, there's no re-encode, and one destination failing doesn't stop the others. Stream keys are stored encrypted (Windows Credential Manager / DPAPI). The relay only accepts input from OBS on this PC, so it can't restream anyone else's live. Upload bandwidth is the limit: each destination needs the full bitrate.
+- 🟣 **Native Twitch clips** (v1.4.0): turns highlights into real Twitch clips with Twitch's official Helix API ("Create Clip From VOD", in open beta). It only works on your own channel or channels where you're an editor. Sign-in uses a device code on twitch.tv/activate, and you need your own free Twitch app (Client ID). Your VODs must be turned on.
+- ▶️ **YouTube Shorts auto-upload**: the official YouTube Data API with your own OAuth client. Tokens are encrypted (DPAPI). Uploads are part of the rotation with a daily cap, deduplication and review first. Auto-post is off by default.
+- 🟢 **Kick is export only**: Kick has no public API for uploading videos or creating clips, so a Kick account saves the clip and its caption to Exports, and an "Open Kick" button takes you there. No scraping and no unofficial uploads.
+- 🎞️ **Gallery**: thumbnails, video preview on hover, and a status on every clip (👀 to review, ⏳ queued, ✅ posted, 📦 exported) with the account it went to.
 - 💾 **Crash-safe**: state in SQLite, so after a restart or power cut nothing is cut or posted twice.
 - 🌍 **English or Romanian dashboard** (`ui_language`).
 
@@ -161,6 +168,8 @@ Everything is in `config.yaml` (created from [`config.example.yaml`](config.exam
 |---|---|---|
 | `language` | `en` | Whisper speech language (`en`, `ro`, `es`, `de`, … or `auto`) |
 | `ui_language` | `en` | Dashboard language: `en` or `ro` |
+| `stream_card` | `true` | Kick/Twitch card on posted/exported clips (real numbers only); `stream_card_viewers`, `stream_card_followers`, `stream_card_link` turn its parts on/off |
+| `twitch_client_id` | `""` | Your Twitch app's Client ID for native Twitch clips; `twitch_clips_auto` (off), `twitch_clip_channels` (channels where you're an editor) |
 | `channel_url` | empty | YouTube channel to watch; empty = only links/files you add |
 | `streamer_name` / `game` | empty / empty | Used in titles. `game` is only a fallback: the real game is detected from the stream (Twitch / Kick / YouTube category, official name via Steam) and goes into titles and hashtags only (e.g. `#CS2`); unknown = `#gaming #clips`. You can also set it per clip. |
 | `credit_text` | empty | Burned into every clip, e.g. `@channel on YouTube` |

@@ -357,7 +357,7 @@ def plan_schedule(n=12, now=None):
         clip, acc, tt, ck = picked
         out.append({"id": clip["id"], "hook": clip.get("hook") or clip.get("title") or "", "account": acc["name"],
                     "account_id": acc["id"], "platform": acc["platform"], "at": tt, "plan": clip["plan"],
-                    "export": acc["platform"] == "facebook" or accounts.public(acc).get("mode") == "export"})
+                    "export": acc["platform"] in accounts.EXPORT_ONLY or accounts.public(acc).get("mode") == "export"})
         st = stats.setdefault(acc["id"], {"today": 0, "last": 0})
         st["today"] += 1; st["last"] = tt
         used.setdefault(ck, set()).add(acc["id"])
@@ -391,15 +391,17 @@ def _post_one(clip, c):
     STATUS["poster"] = f"postez {Path(clip['file']).name}"
     log.info("POSTEZ pe %s (%s): %s | %s", acc["platform"], acc["name"], Path(clip["file"]).name, caption)
     mode = "api"
+    from . import streamcard
+    video, caption = streamcard.apply(clip, caption)   # Kick/Twitch card + channel link (off = unchanged)
     try:
-        if acc["platform"] == "facebook":            # export only (see accounts.DEFAULTS)
+        if acc["platform"] in accounts.EXPORT_ONLY:  # Facebook / Kick: export only (see accounts.DEFAULTS)
             from . import youtube_upload
-            ok, msg, url, mode = True, "exportat pentru upload manual", youtube_upload.export(acc, Path(clip["file"]), caption), "export"
+            ok, msg, url, mode = True, "exportat pentru upload manual", youtube_upload.export(acc, video, caption), "export"
         elif acc["platform"] == "youtube":
             from . import youtube_upload
-            ok, msg, url, mode = youtube_upload.upload(acc, Path(clip["file"]), caption)
+            ok, msg, url, mode = youtube_upload.upload(acc, video, caption)
         else:
-            ok, msg, url = tiktok.upload(Path(clip["file"]), caption, acc.get("visibility"), acc)
+            ok, msg, url = tiktok.upload(video, caption, acc.get("visibility"), acc)
     except Exception as e:
         ok, msg, url = False, f"eroare browser: {str(e)[:150]}", None
     if ok and mode == "export":

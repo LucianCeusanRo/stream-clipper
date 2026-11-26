@@ -8,7 +8,7 @@ from . import accounts, app, db, effects, game, i18n, jobs, progress, styles, re
 from .util import DATA, cfg, log, reset_settings, save_settings
 
 WEB = Path(__file__).parent / "web"
-EDITABLE = {"youtube_client_secret": str, "language": str, "ui_language": str, "extra_keywords": list, "channel_url": str, "streamer_name": str,
+EDITABLE = {"twitch_client_id": str, "twitch_clips_auto": bool, "twitch_clip_channels": list, "stream_card": bool, "stream_card_viewers": bool, "stream_card_followers": bool, "stream_card_link": bool, "youtube_client_secret": str, "language": str, "ui_language": str, "extra_keywords": list, "channel_url": str, "streamer_name": str,
             "game": str, "required_hashtag": str, "credit_text": str, "check_updates": bool, "auto_update": bool,
             "hashtags": list, "post_interval_min_minutes": float, "post_interval_max_minutes": float,
             "daily_post_cap": int, "auto_post": bool, "min_score": float, "clips_per_chunk_max": int,
@@ -40,7 +40,9 @@ SECTIONS = {
     "posting": ["required_hashtag", "hashtags", "extra_hashtags", "hashtags_max", "caption_template", "auto_post",
                 "auto_post_min_viral", "post_order", "post_interval_min_minutes", "post_interval_max_minutes",
                 "post_jitter_minutes", "manual_min_gap_minutes", "daily_post_cap", "quiet_hours", "visibility",
-                "post_preset", "dedupe_similarity", "rotate", "rotate_accounts"],
+                "post_preset", "dedupe_similarity", "rotate", "rotate_accounts",
+                "stream_card", "stream_card_viewers", "stream_card_followers", "stream_card_link",
+                "twitch_client_id", "twitch_clips_auto", "twitch_clip_channels"],
 }
 PRESETS = {"sigur": {"daily_post_cap": 20, "post_interval_min_minutes": 40, "post_interval_max_minutes": 60},
            "normal": {"daily_post_cap": 45, "post_interval_min_minutes": 20, "post_interval_max_minutes": 30},
@@ -284,6 +286,12 @@ class H(BaseHTTPRequestHandler):
                 from . import channels
                 return self._json({"channels": channels.listing(), "every": int(cfg().get("channel_check_every_sec", 90)),
                                    "watching": app.WATCHING.is_set()})
+            if u.path == "/api/multistream":
+                from . import multistream
+                return self._json(multistream.status())
+            if u.path == "/api/twitch":
+                from . import twitch_clips
+                return self._json(twitch_clips.status())
             if u.path == "/api/system":
                 from . import sysinfo
                 d = dict(sysinfo.detect(refresh=qs.get("refresh", ["0"])[0] == "1"))
@@ -608,6 +616,44 @@ class H(BaseHTTPRequestHandler):
                 except (ValueError, platforms.PlatformError) as e:
                     return self._json({"error": str(e)}, 400)
                 return self._json({"error": "actiune necunoscuta"}, 400)
+            if u.path == "/api/multistream":
+                # your own live only: the relay's input is fixed to OBS on 127.0.0.1, no source can be passed in
+                from . import multistream
+                a = b.get("action")
+                try:
+                    if a == "save":
+                        multistream.update(b.get("port"), b.get("dests") or {})
+                    elif a == "key":
+                        multistream.set_key(str(b.get("id") or ""), b.get("key") or "")
+                    elif a == "start":
+                        multistream.start()
+                    elif a == "stop":
+                        multistream.stop()
+                    else:
+                        return self._json({"error": "unknown action"}, 400)
+                except (multistream.MsError, ValueError, TypeError) as e:
+                    return self._json({"error": str(e)}, 400)
+                return self._json(multistream.status())
+            if u.path == "/api/twitch":
+                from . import twitch_clips
+                a = b.get("action")
+                try:
+                    if a == "connect":
+                        twitch_clips.start_auth()
+                    elif a == "disconnect":
+                        twitch_clips.disconnect()
+                    elif a == "clip":
+                        r = db.q("SELECT * FROM clips WHERE id=?", (int(b.get("id") or 0),), one=True)
+                        if not r:
+                            return self._json({"error": "clip not found"}, 404)
+                        tc = twitch_clips.create(r)
+                        db.x("UPDATE clips SET twitch_clip=? WHERE id=?", (tc["edit_url"], r["id"]))
+                        return self._json({"ok": True, **tc})
+                    else:
+                        return self._json({"error": "unknown action"}, 400)
+                except (twitch_clips.TwitchError, ValueError, TypeError) as e:
+                    return self._json({"error": str(e)}, 400)
+                return self._json(twitch_clips.status())
             if u.path == "/api/tiktok_login":
                 from . import tiktok
                 acc = accounts.get(b.get("account") or "") if b.get("account") else None

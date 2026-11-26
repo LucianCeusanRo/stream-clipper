@@ -44,12 +44,31 @@ def _window(chunk):
     return win, chunk["t0"] - real_pre, real_pre, win
 
 
+def _twitch_clip_later(cid):
+    """Native Twitch clip of this highlight in the background (your channel / editor channels only; off by default).
+    The VOD needs a little time to catch up with the live, so it waits 2 minutes first."""
+    def run():
+        time.sleep(120)
+        try:
+            from . import twitch_clips
+            r = db.q("SELECT * FROM clips WHERE id=?", (cid,), one=True)
+            if r:
+                tc = twitch_clips.create(r)
+                db.x("UPDATE clips SET twitch_clip=? WHERE id=?", (tc["edit_url"], cid))
+        except Exception as e:
+            log.info("Twitch clip skipped for #%s: %s", cid, str(e)[:160])
+    threading.Thread(target=run, daemon=True, name="twitch-clip").start()
+
+
 def build_caption(title, rnd=random, game=None):
     """TikTok description: template + hashtags. the optional required_hashtag is always first; total <= hashtags_max.
     `game` = the real game of the clip ('' = unknown -> neutral #gaming #clips)."""
     c = cfg()
     tags = " ".join(texts.pick_hashtags(c, rnd, game=game))
     try:
+        g = str(game or "").strip()
+        if g and g.lower() not in str(title).lower():
+            title = f"{title} 🎮 {g}"           # the real game, once, in the description (never on the video)
         cap = c.get("caption_template", "{title} {hashtags}").format(title=title, hashtags=tags)
     except (KeyError, IndexError, ValueError):
         cap = f"{title} {tags}"
@@ -175,11 +194,13 @@ def process_chunk(chunk, overrides=None):
             vpct, vfac = viral.compute(feat, cand["end"] - cand["start"], hook.startswith(("„", "\u201c")), cat,
                                        sum(1 for w in wrel if w["s"] < 2), llm_sc)
             srcf, ps, pe = save_source(src, cand["start"], cand["end"], dur, out)
-            db.add_clip(video_id=vid, start=s_abs, end=e_abs, score=score, file=str(out), title=title,
+            new_id = db.add_clip(video_id=vid, start=s_abs, end=e_abs, score=score, file=str(out), title=title,
                         caption=caption, text=" ".join(w["w"] for w in wrel), why=", ".join(cand["why"]),
                         thumb=str(thumb) if thumb else None, hook=hook, layout=lay, status=status,
                         viral=vpct, factors=json.dumps(vfac), cat=cat, src=str(srcf) if srcf else None,
                         style=style, styles=",".join(style_all), game=gname or None)
+            if cfg().get("twitch_clips_auto") and str(vid).startswith("twitch-"):
+                _twitch_clip_later(new_id)
             save_json(out.with_suffix(".json"), {
                 "video": vid, "start": s_abs, "end": e_abs, "score": score, "hook": hook, "title": title, "cat": cat,
                 "layout": lay, "cam_box": box, "caption": caption, "why": cand["why"], "words": wrel,
@@ -290,7 +311,7 @@ def _clip_files(r):
         if f:
             out.append(Path(f))
     if r["file"]:
-        for ext in (".json", ".ass", ".fx.json", ".cover.jpg"):
+        for ext in (".json", ".ass", ".fx.json", ".cover.jpg", ".card.mp4", ".card.png"):
             out.append(Path(r["file"]).with_suffix(ext))
     return out
 

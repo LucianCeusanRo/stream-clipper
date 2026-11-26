@@ -12,7 +12,7 @@ import re, threading, time
 from .util import DATA, cfg, load_json, log, save_json
 
 FILE = DATA / "accounts.json"
-PLATFORMS = ("tiktok", "youtube", "facebook")
+PLATFORMS = ("tiktok", "youtube", "facebook", "kick")
 DEFAULTS = {
     "tiktok": {"daily_cap": 15, "interval_min": 30, "interval_max": 60, "visibility": "public"},
     # YouTube API: an upload costs 1600 of the default 10,000 daily quota units -> at most ~6 uploads/day
@@ -20,7 +20,10 @@ DEFAULTS = {
     # Facebook Reels: export only. Meta's official Reels publishing API works for Pages, but needs a Meta app,
     # app review and a Page token - out of scope for a desktop app. The clip + caption are saved for a manual upload.
     "facebook": {"daily_cap": 10, "interval_min": 30, "interval_max": 60, "visibility": "public"},
+    # Kick: export only. Kick has no public API to upload videos or create clips; no scraping, no unofficial upload.
+    "kick": {"daily_cap": 10, "interval_min": 30, "interval_max": 60, "visibility": "public"},
 }
+EXPORT_ONLY = ("facebook", "kick")
 LIMITS = {"daily_cap": (1, 100), "interval_min": (5, 1440), "interval_max": (5, 1440)}
 _lk = threading.RLock()
 
@@ -178,7 +181,7 @@ def public(acc):
     if acc["platform"] == "tiktok":
         d["connected"] = profile_dir(acc).exists()
         d["mode"] = "browser"
-    elif acc["platform"] == "facebook":
+    elif acc["platform"] in EXPORT_ONLY:
         d["connected"] = False
         d["mode"] = "export"
     else:

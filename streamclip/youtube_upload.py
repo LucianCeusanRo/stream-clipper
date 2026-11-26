@@ -4,7 +4,7 @@ You bring your own OAuth client (Google Cloud Console -> APIs & Services -> Cred
 type "Desktop app", YouTube Data API v3 enabled) and point config.yaml at the downloaded JSON:
     youtube_client_secret: "C:/path/client_secret.json"
 "Connect" in Accounts opens Google's consent page in your browser; Google redirects back to this app on
-127.0.0.1 and the token is saved in data/accounts/<id>/youtube_token.json (local only, never in git).
+127.0.0.1 and the token is saved encrypted (Windows DPAPI) in data/accounts/<id>/youtube_token.json (local only, never in git).
 Scope: youtube.upload only (upload videos, nothing else).
 
 Not connected -> export: the clip and a .txt with title + description go to data/exports/<id>/ so you can upload
@@ -13,6 +13,7 @@ by hand. Quota note: an upload costs 1600 units; the default project quota (10,0
 import json, secrets, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 from . import accounts
+from . import secretstore
 from .util import cfg, load_json, log, save_json
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -70,14 +71,14 @@ def finish_auth(state, code):
     acc = accounts.get(acc_id)
     f = accounts.token_file(acc)
     f.parent.mkdir(parents=True, exist_ok=True)
-    save_json(f, tok)
+    secretstore.save_json(f, tok)            # encrypted with Windows DPAPI
     log.info("YouTube conectat pentru contul %s", acc_id)
     return acc_id
 
 
 def access_token(acc):
     f = accounts.token_file(acc)
-    tok = load_json(f, None)
+    tok = secretstore.load_json(f, None)
     if not tok:
         return None
     if tok.get("expires_at", 0) > time.time() and tok.get("access_token"):
@@ -88,7 +89,7 @@ def access_token(acc):
     new = _post(TOKEN_URL, {"client_id": cl[0], "client_secret": cl[1], "refresh_token": tok["refresh_token"],
                             "grant_type": "refresh_token"})
     tok.update(access_token=new["access_token"], expires_at=time.time() + int(new.get("expires_in", 3600)) - 60)
-    save_json(f, tok)
+    secretstore.save_json(f, tok)
     return tok["access_token"]
 
 

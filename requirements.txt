@@ -9,5 +9,6 @@ nvidia-cublas-cu12; sys_platform == "win32"
 nvidia-cudnn-cu12>=9,<10; sys_platform == "win32"
 pywebview>=5.0; sys_platform == "win32"
 pystray>=0.19; sys_platform == "win32"     # optional: "minimize to tray"
-Pillow>=10; sys_platform == "win32"
+Pillow>=10                                   # stream card + thumbnails
 psutil>=5.9                                 # RAM readings for low-memory mode / RAM cap
+keyring>=24; sys_platform == "win32"           # stream keys for Multistream, encrypted by Windows (Credential Manager/DPAPI)

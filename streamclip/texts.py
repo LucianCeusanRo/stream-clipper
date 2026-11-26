@@ -7,17 +7,17 @@ TITLES = {
     "ras_audio": ["{Name} n-a mai putut de râs 😂", "Cel mai amuzant moment din live 😂", "Am plâns de râs la asta 😭",
                   "Râsul ăsta e contagios 😂", "Nu te uita dacă nu vrei să râzi 😂"],
     "ras": ["{Name} n-a mai putut de râs 😂", "Am plâns de râs la asta 😭", "Cel mai amuzant moment din live 😂",
-            "Asta m-a terminat 💀", "Nu te uita dacă nu vrei să râzi 😂", "Am dat replay de 10 ori 😭"],
+            "Asta m-a terminat 💀", "Nu te uita dacă nu vrei să râzi 😂", "{Name} râde de nu mai poate 😂"],
     "injuratura": ["{Name} și-a pierdut răbdarea în {game} 🤬", "Nervi maximi la {game} 😤", "Rage maxim pe live 💀",
                    "{game} l-a scos din minți 🤬", "Când {game} nu te ascultă 😤"],
     "exclamatie": ["Reacția e de nota 10 😱", "Nu se aștepta nimeni la asta 😳", "{Name} a rămas fără cuvinte 😂",
-                   "Uită-te până la final 😳", "Fața lui când a văzut asta 😱", "Nu se poate ce s-a întâmplat 😭"],
+                   "{Name} n-a crezut ce vede 😳", "Fața lui când a văzut asta 😱", "Nu se poate ce s-a întâmplat 😭"],
     "giveaway": ["Giveaway pe live 🎁", "Cine câștigă premiul? 🎮", "A anunțat premiul 🎁"],
     "actiune": ["{game} pe live = haos total 🔥", "{game} cu {name} e altă poveste 😂", "Cea mai tare fază din {game} 🔥",
                 "Așa se joacă {game} în România 🇷🇴", "A stricat {game} 😂"],
     "chat": ["Chatul l-a terminat 😂", "{Name} vs chat, runda 1 🥊", "Chatul n-are milă 😂",
              "Citește chatul și regretă 💀", "Chatul a avut dreptate 😂"],
-    "_": ["Momente tari din live 🔥", "Live-ul ăsta e istorie 🔥", "POV: ești în chat 😂", "Stai până la final 😂"],
+    "_": ["{Name} live la {game} 🎮", "Fază din live-ul lui {name} 🎬", "{Name}, live și fără filtru 🎙️"],
 }
 # viral title patterns built around a short quote actually said on stream ("„NU SE POATE, FRATE!” 😭")
 QUOTE_TITLES = ["„{q}” 😭", "„{q}” – {Name} 😂", "{Name}: „{q}” 💀", "Când {name} zice „{q}” 😂"]
@@ -42,15 +42,15 @@ def fill(t, c=None, game=None):
 
 TITLES_EN = {
     "ras_audio": ["{Name} couldn't stop laughing 😂", "Funniest moment of the stream 😂", "That laugh is contagious 😂"],
-    "ras": ["{Name} couldn't stop laughing 😂", "I cried laughing at this 😭", "Funniest moment of the stream 😂",
-            "Replayed this 10 times 😭"],
+    "ras": ["{Name} couldn't stop laughing 😂", "Funniest moment of the stream 😂",
+            "{Name} lost it on stream 😂"],
     "injuratura": ["{Name} lost all patience in {game} 🤬", "{game} rage on stream 😤", "When {game} doesn't listen 😤"],
     "exclamatie": ["That reaction is a 10/10 😱", "Nobody expected this 😳", "{Name} was speechless 😂",
-                   "Watch till the end 😳"],
+                   "{Name} did not see that coming 😳"],
     "giveaway": ["Giveaway on stream 🎁", "Who wins the prize? 🎮"],
     "actiune": ["{game} on stream = pure chaos 🔥", "Best {game} moment so far 🔥", "{Name} broke {game} 😂"],
     "chat": ["Chat destroyed {name} 😂", "{Name} vs chat, round 1 🥊", "Chat was right 😂"],
-    "_": ["Best moments from the stream 🔥", "This stream was history 🔥", "POV: you're in chat 😂"],
+    "_": ["{Name} live on {game} 🎮", "From {name}'s stream today 🎬", "{Name}, live and unfiltered 🎙️"],
 }
 QUOTE_TITLES_EN = ["\u201c{q}\u201d 😭", "\u201c{q}\u201d – {Name} 😂", "{Name}: \u201c{q}\u201d 💀"]
 EXCLAIM_RO = r"(?i)(nu |ce |doamne|frate|bă|băi|hai|gata|stai|aoleu|mamă|vai)"
@@ -102,10 +102,48 @@ def quote(words_rel, max_words=6):
     return None
 
 
+CAT_EMOJI = {"ras": "😂", "ras_audio": "😂", "injuratura": "🤬", "exclamatie": "😳", "giveaway": "🎁",
+             "actiune": "🔥", "chat": "💬", "_": "🎮"}
+
+
+def spoken_line(words_rel, peak_rel=None, lo=3, hi=12):
+    """The streamer's own sentence closest to the peak (3-12 words), as said - the caption is their words, not a
+    template. Sentences split on punctuation or on a pause > 0.7 s."""
+    sents, cur = [], []
+    for w in words_rel or []:
+        if cur and w["s"] - cur[-1]["e"] > 0.7:
+            sents.append(cur); cur = []
+        cur.append(w)
+        if re.search(r"[.!?]$", w["w"]):
+            sents.append(cur); cur = []
+    if cur:
+        sents.append(cur)
+    ok = []
+    for sw in sents:
+        txt = " ".join(x["w"] for x in sw).strip(" ,.;:-")
+        if lo <= len(sw) <= hi and 10 <= len(txt) <= 90 and re.search(r"[^\W\d_]{2}", txt):
+            mid = (sw[0]["s"] + sw[-1]["e"]) / 2
+            ok.append((abs(mid - peak_rel) if peak_rel is not None else 0, txt))
+    if not ok:
+        return None
+    t = min(ok)[1]
+    return t[:1].upper() + t[1:]
+
+
+def spoken_title(words_rel, peak_rel, cat):
+    q = spoken_line(words_rel, peak_rel)
+    if not q:
+        return None
+    return (f"„{q}” " if is_ro() else f"\u201c{q}\u201d ") + CAT_EMOJI.get(cat, "🎮")
+
+
 def new_title(cat, words_rel=(), avoid=(), rnd=random, game=None):
     """A title different from the ones in `avoid` (used by '🔄 Refă textul')."""
     T = _pick(TITLES, TITLES_EN)
     pool = [fill(t, game=game) for t in list(T.get(cat, T["_"])) + T["_"][:3]]
+    st = spoken_title(list(words_rel), None, cat)
+    if st and st not in set(avoid):
+        return st
     q = quote(list(words_rel))
     if q:
         pool += [fill(t, game=game).replace("{q}", q) for t in _pick(QUOTE_TITLES, QUOTE_TITLES_EN)]
@@ -173,4 +211,5 @@ def make(cand, words_rel, rnd=random, game=None):
     cat = category(cand.get("cats", []))
     titles = _pick(TITLES, TITLES_EN)
     hook = quote_hook(words_rel, cand["peak"] - cand["start"]) or ""
-    return hook, fill(rnd.choice(titles.get(cat, titles["_"])), game=game), cat
+    title = spoken_title(words_rel, cand["peak"] - cand["start"], cat) or fill(rnd.choice(titles.get(cat, titles["_"])), game=game)
+    return hook, title, cat
