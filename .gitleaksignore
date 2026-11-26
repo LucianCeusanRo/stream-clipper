@@ -1,0 +1,3 @@
+# Public Twitch web client ID (not a secret, same value every Twitch web visitor uses)
+7ce6c67accc9b2618836cf8fac25b2a7bbb9036d:streamclip/platforms.py:twitch-api-token:13
+e8d405545a81479ea97af211a7d31389c89c5a06:streamclip/game.py:twitch-api-token:20
