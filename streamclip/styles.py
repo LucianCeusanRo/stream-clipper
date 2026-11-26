@@ -19,7 +19,7 @@ CATEGORIES = [   # key, label, emoji, regex on folded transcript (diacritics rem
     ("giveaway", "Giveaway", "🎁", r"\b(giveaway|ps5|premiu\w*|tragere|castig\w*|concurs|cadou\w*|winner|prize\w*|gifted)"),
     ("cringe", "Cringe / awkward", "😬", r"\b(penibil|jenant|rusine|cringe|awkward|ce-am zis|n-am zis|stai ca|ups|pardon|embarrassing|oops|my bad|i didn'?t say)"),
     ("roast", "Glume / roast", "😂", r"\b(ha){2,}|\bhah+a*|mor de ras|fraier\w*|prost\w*|bou\b|tantalau|ce glum\w*|glum\w*|ma-ta|taica-tu|\b(lol|lmao|rofl|i'?m dying|bro what|clown\w*)"),
-    ("haos_gta", "Haos în joc", "🚓", r"\b(politi\w*|masin\w*|explod\w*|jaf|banca|evad\w*|fugi|impusc\w*|stele|wanted|lucia|jason|vice city|cops?|police|chase|explod\w*|heist|robbery|escape\w*|shoot\w*)"),
+    ("haos_gta", "Haos în joc", "🚓", r"\b(politi\w*|masin\w*|explod\w*|jaf|banca|evad\w*|fugi|impusc\w*|stele|wanted|cops?|police|chase|explod\w*|heist|robbery|escape\w*|shoot\w*)"),
     ("story", "Story time", "📖", r"\b(cand eram|odata|stai sa va zic|povest\w*|am fost la|imi aduc aminte|tin minte|era o data|va zic ceva|when i was|one time|story time|let me tell you|i remember)"),
     ("moment", "Moment tare", "⚡", None),
 ]

@@ -161,7 +161,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                       f"\\fad(0,200)\\fscx85\\fscy85\\t(0,120,\\fscx100\\fscy100)}}{body}")
     extra = (fx or {}).get("_extra") or {}
     wf = extra.get("wait_for_it")
-    if wf and (fx or {}).get("wait_for_it", True):          # payoff comes late -> tease it
+    if wf and (fx or {}).get("wait_for_it", True) and c.get("overlay_texts"):          # payoff comes late -> tease it
         a, b = float(wf[0]), float(wf[1])
         ev.append(f"Dialogue: 3,{ts(a)},{ts(b)},Hook,,0,0,0,,{{\\pos({W // 2},{CAP_Y.get(layout, 1300) - 230})\\fad(150,150)}}{'STAI AȘA…' if texts.is_ro() else 'WAIT FOR IT…'}")
     day = extra.get("ziua")

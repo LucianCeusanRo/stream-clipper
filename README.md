@@ -1,5 +1,8 @@
 <p align="center"><img src="assets/banner.png" alt="Stream Clipper: GTA 6 streams in, Shorts and TikToks out" width="100%"></p>
 
+<h1 align="center"><a href="https://github.com/LucianCeusanRo/stream-clipper/releases/latest/download/StreamClipper-Setup.exe">⬇️ Download for Windows</a></h1>
+<p align="center"><b>Installer: Next → Next → Install.</b> Free, no admin needed. <a href="https://github.com/LucianCeusanRo/stream-clipper/releases/latest">All downloads</a> · Windows 10/11 · unsigned, so SmartScreen may ask: <i>More info → Run anyway</i>.</p>
+
 <p align="center">
 <a href="https://github.com/LucianCeusanRo/stream-clipper/actions/workflows/ci.yml"><img src="https://github.com/LucianCeusanRo/stream-clipper/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 <a href="LICENSE"><img src="https://img.shields.io/github/license/LucianCeusanRo/stream-clipper" alt="MIT license"></a>
@@ -14,7 +17,7 @@
 Built for GTA 6, but it works for any streamer, game or language.<br>
 <a href="https://lucianceusanro.github.io/stream-clipper/">Website</a> ·
 <a href="#quick-start">Quick start</a> ·
-<a href="https://github.com/LucianCeusanRo/stream-clipper/releases/latest">Download</a> ·
+<a href="https://github.com/LucianCeusanRo/stream-clipper/releases/latest/download/StreamClipper-Setup.exe">Download</a> ·
 <a href="https://github.com/LucianCeusanRo/stream-clipper/discussions/1">💬 The debate: is clipping streamers free promotion or taking their work?</a> ·
 <a href="README.ro.md">Română</a>
 </p>
@@ -68,7 +71,7 @@ Clips are someone else's work. Please:
 - 🗣️ **Whisper transcription**: faster-whisper `large-v3` with word timestamps; set the language (`en`, `ro`, `es`, …) or `auto`. Extra clean-up for Romanian (diacritics).
 - 🎯 **Moment detection**: loudness spikes, screams, laughter rhythm, keywords in English and Romanian (plus your own `extra_keywords`), live chat activity. Optional LLM judge with any OpenAI-compatible API or a free local Ollama model.
 - 🧑‍💻 **Smart layout**: face detection finds the webcam: cam on top + game below; no webcam → whole frame over a blurred background.
-- 💬 **Captions that pop**: 1–3 word groups, the current word highlighted, keyword colours, a hook line in the first seconds, 6 bundled fonts.
+- 💬 **Captions that pop**: 1–3 word groups, the current word highlighted, keyword colours, a hook line only when the streamer really shouted something (their own words, never a game name), 6 bundled fonts.
 - ✨ **Effects** (each can be turned off): emoji pop-ups, punch-in zoom on peaks, light shake on rage, original sound effects, loudness normalised to −14 LUFS.
 - ✂️ **Review and edit**: viral-chance estimate with the reasons, editable title/description, "New text" button, re-cut ±1 s snapped to sentence edges.
 - 📤 **Optional TikTok posting**: through the TikTok Studio website with your own login, gaps between posts and a daily cap.
@@ -102,9 +105,10 @@ flowchart LR
 
 ## Quick start
 
-1. **Download** the [latest release](https://github.com/LucianCeusanRo/stream-clipper/releases/latest) (Source code ZIP) or `git clone` the repo, and unzip it to a simple folder such as `C:\StreamClipper`.
-2. **Double-click `setup.bat`.** It installs Python 3.12 (only if missing), ffmpeg, Deno, the Python packages, Chromium (for optional posting) and the Whisper model, runs the tests and creates a **Stream Clipper** desktop shortcut. 15–20 minutes the first time, no admin rights needed.
-3. **Open Stream Clipper**, go to **⚙️ Settings**, set the speech language, channel (optional), streamer name, credit text and hashtags, and press **Save**.
+1. **[Download the installer](https://github.com/LucianCeusanRo/stream-clipper/releases/latest/download/StreamClipper-Setup.exe)** (`StreamClipper-Setup.exe`) and run it: **Next → Next → Install**.
+2. It sets up Python 3.12 (only if missing), ffmpeg, Deno, the packages and the Whisper model (15–20 minutes the first time, no admin rights) and adds a **Stream Clipper** shortcut. Updates install themselves at every start.
+   *Prefer manual?* Take the source ZIP from the [release](https://github.com/LucianCeusanRo/stream-clipper/releases/latest), unzip it and double-click `setup.bat`.
+3. **Open Stream Clipper**, go to **⚙️ Settings**, set the speech language, channel (optional), streamer name, credit text and hashtags. The game is detected from the stream (Twitch / Kick / YouTube category) and used in titles and hashtags only; captions on the video are just the words the streamer says, and press **Save**.
 
 <details>
 <summary><b>Run from source (Linux/macOS/Windows, for developers)</b></summary>
@@ -148,7 +152,7 @@ Everything is in `config.yaml` (created from [`config.example.yaml`](config.exam
 | `language` | `en` | Whisper speech language (`en`, `ro`, `es`, `de`, … or `auto`) |
 | `ui_language` | `en` | Dashboard language: `en` or `ro` |
 | `channel_url` | empty | YouTube channel to watch; empty = only links/files you add |
-| `streamer_name` / `game` | empty / `GTA 6` | Used in hooks and titles (`game` can be any topic) |
+| `streamer_name` / `game` | empty / empty | Used in titles. `game` is only a fallback: the real game is detected from the stream (Twitch / Kick / YouTube category, official name via Steam) and goes into titles and hashtags only (e.g. `#CS2`); unknown = `#gaming #clips`. You can also set it per clip. |
 | `credit_text` | empty | Burned into every clip, e.g. `@channel on YouTube` |
 | `required_hashtag` | empty | Campaign hashtag, always first when set |
 | `hashtags` / `extra_hashtags` / `hashtags_max` | `#gta6` / popular tags / 5 | Fixed + randomly picked hashtags |
@@ -178,7 +182,7 @@ Transcription and audio-based detection (screams, laughter, volume spikes, chat)
 </details>
 
 <details><summary><b>Does it only work for GTA 6?</b></summary>
-No. GTA 6 is just the default <code>game</code> value. Set it to any game or topic ("Just Chatting", "the podcast"). For IRL or podcasts without a fixed webcam, the <code>blur</code> or <code>fill</code> layout usually looks better.
+No. GTA 6 is the reason I built it, but the app detects the real game of each stream (CS2, Call of Duty, Skate 3, anything) for titles and hashtags, and never puts a game name on the video. For IRL or podcasts without a fixed webcam, the <code>blur</code> or <code>fill</code> layout usually looks better.
 </details>
 
 <details><summary><b>Can I use it without a GPU?</b></summary>

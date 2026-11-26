@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import numpy as np
 import json
-from . import db, detect, progress, styles, layout, llm, render, texts, viral, youtube
+from . import db, detect, game, progress, styles, layout, llm, render, texts, viral, youtube
 from .transcribe import transcribe, load_wav, fix_ro
 from .util import DATA, cfg, log, run, tool, ffprobe_duration, save_json, load_json
 
@@ -44,10 +44,11 @@ def _window(chunk):
     return win, chunk["t0"] - real_pre, real_pre, win
 
 
-def build_caption(title, rnd=random):
-    """TikTok description: template + hashtags. the optional required_hashtag is always first; total <= hashtags_max."""
+def build_caption(title, rnd=random, game=None):
+    """TikTok description: template + hashtags. the optional required_hashtag is always first; total <= hashtags_max.
+    `game` = the real game of the clip ('' = unknown -> neutral #gaming #clips)."""
     c = cfg()
-    tags = " ".join(texts.pick_hashtags(c, rnd))
+    tags = " ".join(texts.pick_hashtags(c, rnd, game=game))
     try:
         cap = c.get("caption_template", "{title} {hashtags}").format(title=title, hashtags=tags)
     except (KeyError, IndexError, ValueError):
@@ -99,6 +100,7 @@ def process_chunk(chunk, overrides=None):
     c = dict(cfg(), **(overrides or {}))
     vid = chunk["video_id"]
     v = db.video(vid)
+    gname = game.effective(None, vid, v["title"] if v else None, c)      # real game of this stream ('' = unknown)
     src, win_t0, preroll, tmp = _window(chunk)
     wav = Path(src).with_suffix(".wav")
     made = 0
@@ -143,7 +145,7 @@ def process_chunk(chunk, overrides=None):
             peak_rel = cand.get("peak", cand["start"]) - cand["start"]
             hs = float(c.get("hook_seconds", 2.5))
             extra = {"ziua": series_day(v, s_abs, c)}
-            if peak_rel > hs + 4.5:                              # payoff comes late -> "STAI AȘA…" tease
+            if c.get("overlay_texts") and peak_rel > hs + 4.5:                              # payoff comes late -> "STAI AȘA…" tease
                 extra["wait_for_it"] = (hs + 0.2, min(peak_rel - 0.6, hs + 3.0))
             render.render(src, cand["start"], cand["end"], wrel, hook, out, lay, box, extra=extra)
             log.info("  CLIP %s [%s] (%.0fs, scor %.1f, %s) randat in %.0fs -> %s", hms(s_abs), lay, cand["end"] - cand["start"],
@@ -162,7 +164,7 @@ def process_chunk(chunk, overrides=None):
                         caption=caption, text=" ".join(w["w"] for w in wrel), why=", ".join(cand["why"]),
                         thumb=str(thumb) if thumb else None, hook=hook, layout=lay, status=status,
                         viral=vpct, factors=json.dumps(vfac), cat=cat, src=str(srcf) if srcf else None,
-                        style=style, styles=",".join(style_all))
+                        style=style, styles=",".join(style_all), game=gname or None)
             save_json(out.with_suffix(".json"), {
                 "video": vid, "start": s_abs, "end": e_abs, "score": score, "hook": hook, "title": title, "cat": cat,
                 "layout": lay, "cam_box": box, "caption": caption, "why": cand["why"], "words": wrel,
@@ -197,11 +199,11 @@ def process_chunk(chunk, overrides=None):
             if not styles.enabled_categories().get(style, True):
                 log.info("  moment %s sarit: stilul %s e dezactivat", hms(s_abs), style)
                 continue
-            hook, title, cat = texts.make(cand, wrel)
+            hook, title, cat = texts.make(cand, wrel, game=gname)
             score = cand["score"]
             llm_sc = None
             if use_llm:
-                j = llm.judge(cand, wrel)
+                j = llm.judge(cand, wrel, gname)
                 if j:
                     try:
                         sc = float(j.get("scor", 0))
@@ -223,9 +225,8 @@ def process_chunk(chunk, overrides=None):
                             s_abs, e_abs = win_t0 + cand["start"], win_t0 + cand["end"]
                     except Exception:
                         pass
-                    hook = (j.get("hook") or hook).strip()
                     title = (j.get("titlu") or title).strip()
-            caption = build_caption(title)
+            caption = build_caption(title, game=gname)
             job = dict(i=i, cand=cand, wrel=wrel, hook=hook, title=title, caption=caption, score=score, cat=cat,
                        llm_sc=llm_sc, style=style, style_all=style_all, s_abs=s_abs, e_abs=e_abs)
             if pool:
@@ -352,6 +353,12 @@ class ClipError(Exception):
     pass
 
 
+def _spoken_hook(h):
+    """Only a real quote of the streamer may be burned into the video (older clips had generic hook texts)."""
+    h = (h or "").strip()
+    return h if h.startswith(("„", "\u201c")) else ""
+
+
 def _meta(r):
     p = Path(r["file"]).with_suffix(".json")
     return p, (load_json(p, {}) if p.exists() else {})
@@ -368,10 +375,12 @@ def retext(cid, rnd=random):
     cat = r["cat"] or m.get("cat") or "_"
     words = m.get("words") or []
     title = None
+    v = db.video(r["video_id"])
+    g = game.effective(r["game"] if "game" in r.keys() else None, r["video_id"], v["title"] if v else None)
     if cfg().get("use_llm", True) and llm.available():
-        title = llm.retitle(r["text"] or "", r["title"] or "")
-    title = title or texts.new_title(cat, words, avoid=[r["title"]], rnd=rnd)
-    cap = build_caption(title, rnd)
+        title = llm.retitle(r["text"] or "", r["title"] or "", g)
+    title = title or texts.new_title(cat, words, avoid=[r["title"]], rnd=rnd, game=g)
+    cap = build_caption(title, rnd, game=g)
     db.x("UPDATE clips SET title=?, caption=? WHERE id=?", (title, cap, cid))
     if m:
         m.update(title=title, caption=cap); save_json(p, m)
@@ -421,7 +430,7 @@ def recut(cid, dstart=0.0, dend=0.0, snap=True):
     ver = int(r["version"] or 1) + 1
     stem = re.sub(r"_v\d+$", "", Path(r["file"]).stem)
     out = Path(r["file"]).with_name(f"{stem}_v{ver}.mp4")
-    render.render(r["src"], ns, ne, words, r["hook"] or "", out, m.get("layout") or r["layout"], m.get("cam_box"))
+    render.render(r["src"], ns, ne, words, _spoken_hook(r["hook"]), out, m.get("layout") or r["layout"], m.get("cam_box"))
     thumb = out.with_suffix(".jpg")
     try:
         run([tool("ffmpeg"), "-y", "-v", "error", "-ss", "1.5", "-i", out, "-frames:v", "1", "-vf", "scale=360:-2", thumb])

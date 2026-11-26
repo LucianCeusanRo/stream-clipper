@@ -8,7 +8,7 @@ from streamclip import accounts, youtube_upload, util, db, detect, render, trans
 
 QUICK = os.environ.get("CLIPPER_QUICK") == "1"
 # the tests use a clipping-campaign style required hashtag; T0 checks the default (none)
-util.save_settings({"required_hashtag": "#mycampaign", "streamer_name": "Alex", "game": "GTA 6", "language": "ro"})
+util.save_settings({"required_hashtag": "#mycampaign", "streamer_name": "Alex", "game": "", "language": "ro"})
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
 
 
@@ -44,10 +44,10 @@ class T0NoRequiredTag(unittest.TestCase):
         util.save_settings({"required_hashtag": "#mycampaign"})
 
     def test_nothing_forced_by_default(self):
-        util.save_settings({"required_hashtag": "", "hashtags": ["#gta6"], "extra_hashtags": [], "hashtags_max": 5})
-        self.assertEqual(util.cfg()["hashtags"], ["#gta6"])
+        util.save_settings({"required_hashtag": "", "hashtags": ["#mytag"], "extra_hashtags": [], "hashtags_max": 5})
+        self.assertEqual(util.cfg()["hashtags"], ["#mytag"])
         cap = pipeline.build_caption("Moment tare 😂")
-        self.assertNotIn("#mycampaign", cap); self.assertIn("#gta6", cap)
+        self.assertNotIn("#mycampaign", cap); self.assertIn("#mytag", cap)
         self.assertEqual(texts.finalize_caption("a #fyp b"), "a b #fyp")
 
     def test_required_tag_for_tiktok_check(self):
@@ -57,7 +57,7 @@ class T0NoRequiredTag(unittest.TestCase):
         self.assertEqual(tiktok.required_tag(), "#mycampaign")
 
     def test_titles_use_configured_name(self):
-        util.save_settings({"streamer_name": "Maria", "game": "GTA 6"})
+        util.save_settings({"streamer_name": "Maria", "game": ""})
         for i in range(30):
             t = texts.new_title("chat", rnd=random.Random(i))
             self.assertNotIn("{", t)
@@ -71,7 +71,7 @@ class T0NoRequiredTag(unittest.TestCase):
         try:
             self.assertIn("the streamer", texts.fill("{name}"))
             hook, title, cat = texts.make({"cats": ["ras"], "peak": 5, "start": 0}, [])
-            self.assertTrue(hook.isupper() or "😂" in hook)
+            self.assertEqual(hook, "")            # no spoken quote -> no hook text on the video
             self.assertNotRegex(title + hook, r"[ăâîșț]")
             self.assertIn("ras", detect._kw_score("lmao")[1])
             self.assertIn("exclamatie", detect._kw_score("oh my god no way")[1])
@@ -81,11 +81,100 @@ class T0NoRequiredTag(unittest.TestCase):
             util.save_settings({"language": "ro", "streamer_name": "Alex", "extra_keywords": []})
 
 
+class T25RealGame(unittest.TestCase):
+    """The game comes from the stream's metadata and only goes into titles/hashtags; never GTA by default."""
+    @classmethod
+    def setUpClass(cls):
+        from streamclip import game
+        cls.game = game
+        cls._steam = game.steam_name
+        game.steam_name = lambda term, timeout=4: {"hades": "Hades", "skate 3": "skate 3"}.get(term.lower(), "")   # offline
+        cls._saved = {k: util.cfg().get(k) for k in ("hashtags", "extra_hashtags", "game", "required_hashtag", "hashtags_max", "language")}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.game.steam_name = cls._steam
+        util.save_settings({"required_hashtag": "#mycampaign", "hashtags": ["#mycampaign"], "game": "", "language": "ro"})
+
+    def setUp(self):
+        util.save_settings({"required_hashtag": "", "hashtags": [], "extra_hashtags": [], "hashtags_max": 5,
+                            "game": "GTA 6", "language": "en"})                     # old default must not leak in
+
+    def test_cs2_stream_gets_cs2_and_no_gta(self):
+        g, src = self.game.from_info({"title": "ranked grind", "categories": ["Counter-Strike"]})
+        self.assertEqual((g, src), ("Counter-Strike 2", "metadata"))
+        cap = pipeline.build_caption(texts.new_title("actiune", game=g), game=g)
+        self.assertIn("#CS2", cap); self.assertNotIn("gta", cap.lower())
+        self.assertIn("Counter-Strike 2", texts.new_title("actiune", rnd=random.Random(1), game=g) + "Counter-Strike 2")
+
+    def test_other_games_from_platform_metadata(self):
+        for info, name, tag in [({"game": "Call of Duty: Warzone"}, "Call of Duty", "#CallOfDuty"),
+                                ({"categories": ["THE FINALS"]}, "THE FINALS", "#TheFinals"),
+                                ({"categories": ["Team Fortress 2"]}, "Team Fortress 2", "#TF2"),
+                                ({"categories": ["Hades"]}, "Hades", "#Hades"),
+                                ({"title": "skate 3 is still the best"}, "skate 3", "#Skate3")]:
+            g, _ = self.game.from_info(info)
+            self.assertEqual((g, self.game.tag_for(g)), (name, tag))
+
+    def test_unknown_game_is_neutral_never_gta(self):
+        for info in ({}, {"categories": ["Just Chatting"]}, {"categories": ["Gaming"], "title": "late night stream"}):
+            g, _ = self.game.from_info(info)
+            self.assertEqual(g, "")
+        self.assertEqual(self.game.effective(None, "nope", "late night"), "")          # 'GTA 6' default setting is ignored
+        cap = pipeline.build_caption("Moment tare 😂", game="")
+        self.assertIn("#gaming", cap); self.assertIn("#clips", cap)
+        self.assertNotIn("gta", cap.lower())
+        self.assertNotIn("GTA", texts.new_title("actiune", game="") + texts.fill("{game}", game=""))
+
+    def test_old_gta6_hashtag_is_dropped_for_other_games_but_kept_for_gta(self):
+        util.save_settings({"hashtags": ["#gta6", "#funny"]})
+        self.assertNotIn("#gta6", pipeline.build_caption("x", game="Counter-Strike 2").lower())
+        self.assertIn("#gta6", pipeline.build_caption("x", game="Grand Theft Auto VI").lower())
+
+    def test_clip_game_override_beats_stream_game(self):
+        self.game.remember("vidG", "Counter-Strike 2", "metadata")
+        self.assertEqual(self.game.effective(None, "vidG"), "Counter-Strike 2")
+        self.assertEqual(self.game.effective("Hades", "vidG"), "Hades")
+
+    def test_normalize_offline_keeps_platform_name(self):
+        self.assertEqual(self.game.normalize("Some Indie Game"), "Some Indie Game")
+        self.assertEqual(self.game.normalize("Just Chatting"), "")
+
+    def test_burned_in_hook_is_only_a_spoken_quote(self):
+        cand = {"cats": ["actiune"], "peak": 5, "start": 0}
+        hook, title, _ = texts.make(cand, [], game="Counter-Strike 2")
+        self.assertEqual(hook, "")
+        words = [{"w": w, "s": 4.5 + i * 0.3, "e": 4.7 + i * 0.3} for i, w in enumerate("no way he did that".split())]
+        hook, _, _ = texts.make(cand, words, game="Counter-Strike 2")
+        self.assertTrue(hook.upper() == hook and "NO WAY" in hook and "COUNTER" not in hook and "GTA" not in hook)
+        self.assertEqual(pipeline._spoken_hook("GTA 6 = HAOS TOTAL"), "")
+        ass = render.build_ass(words, 8.0, "", "blur", {}, None)
+        self.assertNotIn("GTA", ass); self.assertNotIn("Counter", ass); self.assertNotIn("WAIT FOR IT", ass)
+
+    def test_twitch_and_kick_apis_offline_safe(self):
+        orig = self.game.requests.post, self.game.requests.get
+        def boom(*a, **k): raise OSError("offline")
+        self.game.requests.post = self.game.requests.get = boom
+        try:
+            self.assertEqual(self.game.from_url("https://www.twitch.tv/somebody"), "")
+            self.assertEqual(self.game.from_url("https://kick.com/somebody"), "")
+        finally:
+            self.game.requests.post, self.game.requests.get = orig
+
+    def test_live_url_pick_respects_height(self):
+        from streamclip import jobs
+        info = {"http_headers": {"User-Agent": "x"}, "formats": [
+            {"url": "u480", "height": 480, "vcodec": "avc1"}, {"url": "u1080", "height": 1080, "vcodec": "avc1"},
+            {"url": "u1440", "height": 1440, "vcodec": "avc1"}, {"url": "audio", "vcodec": "none"}]}
+        self.assertEqual(jobs.live_stream_url(info, 1080)[0], "u1080")
+        self.assertEqual(jobs.live_stream_url(info, 720)[0], "u480")
+
+
 class T1Config(unittest.TestCase):
     def test_hashtag_forced(self):
-        util.save_settings({"hashtags": ["#gta6"]})
+        util.save_settings({"hashtags": ["#mytag"]})
         self.assertIn("#mycampaign", util.cfg()["hashtags"])
-        self.assertIn("#gta6", util.cfg()["hashtags"])
+        self.assertIn("#mytag", util.cfg()["hashtags"])
         util.save_settings({"hashtags": ["#mycampaign"]})
 
     def test_caption_always_has_tags(self):
@@ -401,7 +490,7 @@ class T7Web(unittest.TestCase):
         self.req("/api/clip", {"id": c2, "action": "skip"})
         code, lst = self.req("/api/clips?status=all")
         ids = [x["id"] for x in lst]; self.assertIn(c2, ids); self.assertNotIn(cid, ids)   # gallery = all but deleted
-        code, r = self.req("/api/settings", {"hashtags": "#gta6 #alex", "daily_post_cap": 40})
+        code, r = self.req("/api/settings", {"hashtags": "#mytag #alex", "daily_post_cap": 40})
         self.assertEqual(code, 200); self.assertIn("#mycampaign", r["hashtags"])
         code, _ = self.req("/api/settings", {"post_interval_min_minutes": 0}); self.assertEqual(code, 400)
         code, _ = self.req("/api/control", {"action": "stop"}); self.assertFalse(app.WATCHING.is_set())
@@ -421,13 +510,13 @@ class T8HashtagsFirst(unittest.TestCase):
 
     def test_required_tag_always_first(self):
         # user puts it last / forgets it / template puts hashtags first: it's still the FIRST hashtag
-        util.save_settings({"hashtags": ["#gta6", "#fyp", "#MYCAMPAIGN"], "extra_hashtags": ["#viral", "#romania"],
+        util.save_settings({"hashtags": ["#mytag", "#fyp", "#MYCAMPAIGN"], "extra_hashtags": ["#viral", "#romania"],
                             "hashtags_max": 5})
         self.assertEqual(util.cfg()["hashtags"][0], "#mycampaign")
         for tpl in ("{title} {hashtags}", "{hashtags} {title}", "{title}", "#fyp {title} {hashtags} #extra"):
             util.save_settings({"caption_template": tpl})
             for i in range(20):
-                cap = pipeline.build_caption("Alex a luat-o razna 😂 #gta6", random.Random(i))
+                cap = pipeline.build_caption("Alex a luat-o razna 😂 #mytag", random.Random(i))
                 self.assertEqual(first_tag(cap), "#mycampaign", cap)
                 self.assertEqual(cap.lower().count("#mycampaign"), 1, cap)
         util.save_settings({"caption_template": "{title} {hashtags}"})
@@ -442,7 +531,7 @@ class T8HashtagsFirst(unittest.TestCase):
         orig = tiktok._upload
         tiktok._upload = lambda v, cap, vis=None, acc=None: (got.setdefault("cap", cap), (False, "test"))[1]
         try:
-            tiktok.upload(Path("x.mp4"), "titlu #fyp #gta6")
+            tiktok.upload(Path("x.mp4"), "titlu #fyp #mytag")
         finally:
             tiktok._upload = orig
         self.assertEqual(first_tag(got["cap"]), "#mycampaign")
@@ -1119,7 +1208,7 @@ class T22Accounts(unittest.TestCase):
         self._orig = tiktok.upload; tiktok.upload = fake_upload
         db.x("UPDATE clips SET status='skipped' WHERE status IN ('queued','pending','failed')")
         accounts.save_all([{"id": "main", "name": "Main", "platform": "tiktok", "legacy_profile": True},
-                           {"id": "alt", "name": "Alt", "platform": "tiktok", "hashtags": "#gta6 #clips", "daily_cap": 2},
+                           {"id": "alt", "name": "Alt", "platform": "tiktok", "hashtags": "#mytag #clips", "daily_cap": 2},
                            {"id": "yt", "name": "Shorts", "platform": "youtube", "rotation": False}])
 
     def tearDown(self):
@@ -1153,7 +1242,7 @@ class T22Accounts(unittest.TestCase):
         self.assertTrue(app.post_one(self.row(cid)))
         acc_id, cap = self.calls[-1]
         self.assertEqual(acc_id, "alt"); self.assertTrue(cap.split()[-4:][0].startswith("#"))
-        self.assertIn("#gta6", cap); self.assertIn("#mycampaign", cap)
+        self.assertIn("#mytag", cap); self.assertIn("#mycampaign", cap)
         self.assertEqual(self.row(cid)["account"], "alt")
 
     def test_per_account_cap_skips_to_other_account(self):
@@ -1207,7 +1296,7 @@ class T22Accounts(unittest.TestCase):
             tf = accounts.token_file(acc); tf.parent.mkdir(parents=True, exist_ok=True)
             util.save_json(tf, {"access_token": "old", "refresh_token": "r1", "expires_at": 0})
             f = Path(util.DATA) / "yt.mp4"; f.write_bytes(b"v" * 1234)
-            ok, msg, url, mode = youtube_upload.upload(acc, f, "Ce moment nebun #gta6")
+            ok, msg, url, mode = youtube_upload.upload(acc, f, "Ce moment nebun #mytag")
             self.assertTrue(ok, msg); self.assertEqual(mode, "api"); self.assertEqual(url, "https://youtube.com/shorts/abc123")
             self.assertTrue(seen["refresh"]); self.assertEqual(seen["auth"], "Bearer a2"); self.assertEqual(seen["bytes"], 1234)
             self.assertIn("#Shorts", seen["meta"]["snippet"]["title"])
@@ -1249,9 +1338,21 @@ class T23SettingsAndUI(T7Web):
         self.assertFalse(c["auto_post"])
         self.assertEqual(db.q("SELECT status FROM clips WHERE id=?", (cid,), one=True)["status"], "pending")   # clips kept
         self.assertTrue(accounts.all_accounts())                                                             # accounts kept
-        util.save_settings({"required_hashtag": "#mycampaign", "streamer_name": "Alex", "game": "GTA 6", "language": "ro",
+        util.save_settings({"required_hashtag": "#mycampaign", "streamer_name": "Alex", "game": "", "language": "ro",
                             "manual_min_gap_minutes": 0})
         db.x("UPDATE clips SET status='skipped' WHERE id=?", (cid,))
+
+    def test_set_game_per_clip(self):
+        util.save_settings({"required_hashtag": "", "hashtags": [], "extra_hashtags": [], "language": "en", "use_llm": False})
+        cid = db.add_clip(video_id="vidSG", start=1, end=30, score=4, file=str(Path(util.DATA) / "sg.mp4"), title="t", caption="t",
+                          cat="actiune", game="Counter-Strike 2")
+        code, r = self.req("/api/clip", {"id": cid, "action": "set_game", "game": "Hades"})
+        self.assertEqual(code, 200); self.assertEqual(r["game"], "Hades")
+        self.assertIn("#Hades", r["caption"]); self.assertNotIn("gta", r["caption"].lower())
+        self.assertEqual(db.q("SELECT game FROM clips WHERE id=?", (cid,), one=True)["game"], "Hades")
+        code, r = self.req("/api/clip", {"id": cid, "action": "set_game", "game": ""})        # back to automatic = neutral here
+        self.assertIn("#gaming", r["caption"])
+        util.save_settings({"required_hashtag": "#mycampaign", "hashtags": ["#mycampaign"], "language": "ro"})
 
     def test_system_and_accounts_api(self):
         code, s = self.req("/api/system"); self.assertEqual(code, 200)

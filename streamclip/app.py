@@ -446,6 +446,11 @@ def poster():
 
 def register(info, status):
     db.upsert_video(info["id"], info.get("title"), info.get("channel"), youtube.start_ts(info), status)
+    try:
+        from . import game
+        game.remember_from(info["id"], info, info.get("webpage_url") or info.get("original_url"))
+    except Exception as e:
+        log.debug("game detect: %s", str(e)[:100])
 
 
 def start_live(li):

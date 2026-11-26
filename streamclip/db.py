@@ -90,7 +90,7 @@ def conn():
                                   ("clips", "url", "TEXT"), ("clips", "hook", "TEXT"), ("clips", "layout", "TEXT"), ("clips", "queued_at", "REAL"),
                                   ("clips", "viral", "INTEGER"), ("clips", "factors", "TEXT"), ("clips", "cat", "TEXT"),
                                   ("clips", "src", "TEXT"), ("clips", "version", "INTEGER DEFAULT 1"),
-                                  ("clips", "style", "TEXT"), ("clips", "styles", "TEXT"), ("clips", "account", "TEXT")):
+                                  ("clips", "style", "TEXT"), ("clips", "styles", "TEXT"), ("clips", "account", "TEXT"), ("clips", "game", "TEXT")):
                 try:
                     _conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typ}")
                 except sqlite3.OperationalError:

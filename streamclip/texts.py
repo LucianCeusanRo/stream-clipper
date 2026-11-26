@@ -1,18 +1,8 @@
-"""Hooks (on-screen, first 2 s) and titles used when no LLM is configured. English, or Romanian when language: ro."""
+"""Titles used when no LLM is configured. (On-video hooks are only real quotes of the streamer; see make().) English, or Romanian when language: ro."""
 import random, re
 from .detect import fold
 
 # {name} = streamer_name from config.yaml (empty -> "streamerul"), {game} = game from config.yaml.
-HOOKS = {
-    "ras_audio": ["{NAME} A MURIT DE RÂS 😂", "N-AM MAI RÂS AȘA DE MULT", "CE A FOST ASTA? 😂"],
-    "ras": ["{NAME} A MURIT DE RÂS 😂", "N-AM MAI RÂS AȘA DE MULT", "ASTA M-A TERMINAT 💀", "CE A FOST ASTA? 😂"],
-    "injuratura": ["{NAME} A LUAT-O RAZNA 🤬", "NERVI MAXIMI LA {GAME}", "NU MAI POATE 😤", "RAGE MAXIM ÎN {GAME}"],
-    "exclamatie": ["NU SE POATE CE A PĂȚIT", "REACȚIA LUI {NAME} 😱", "STAI SĂ VEZI FINALUL", "NIMENI NU SE AȘTEPTA"],
-    "giveaway": ["GIVEAWAY PE LIVE 🎁", "CINE CÂȘTIGĂ PREMIUL?", "A ANUNȚAT PREMIUL 🎁"],
-    "actiune": ["CEA MAI TARE FAZĂ DIN {GAME}", "{GAME} = HAOS TOTAL", "{GAME} PE LIVE E ALTCEVA"],
-    "chat": ["CHATUL L-A ENERVAT 😂", "{NAME} VS CHATUL 😂", "CE I-A ZIS CHATUL"],
-    "_": ["MOMENT DE AUR DIN LIVE", "STAI PÂNĂ LA FINAL 😂", "ASTA TREBUIA CLIPUITĂ"],
-}
 TITLES = {
     "ras_audio": ["{Name} n-a mai putut de râs 😂", "Cel mai amuzant moment din live 😂", "Am plâns de râs la asta 😭",
                   "Râsul ăsta e contagios 😂", "Nu te uita dacă nu vrei să râzi 😂"],
@@ -33,29 +23,23 @@ TITLES = {
 QUOTE_TITLES = ["„{q}” 😭", "„{q}” – {Name} 😂", "{Name}: „{q}” 💀", "Când {name} zice „{q}” 😂"]
 
 
-def fill(t, c=None):
-    """Put the streamer name / game from config into a template."""
+def fill(t, c=None, game=None):
+    """Put the streamer name / game into a template. `game` = the game of this clip ('' = unknown -> neutral wording);
+    None = only the 'Default game' setting."""
     if c is None:
         from .util import cfg
         c = cfg()
     ro = is_ro(c)
     name = str(c.get("streamer_name") or "").strip() or ("streamerul" if ro else "the streamer")
-    game = str(c.get("game") or "").strip() or ("jocul" if ro else "the game")
+    if game is None:
+        from . import game as _g
+        game = _g.default_game(c)
+    game = str(game or "").strip() or ("jocul" if ro else "the game")
     return (t.replace("{NAME}", name.upper()).replace("{GAME}", game.upper())
              .replace("{Name}", name[:1].upper() + name[1:]).replace("{name}", name).replace("{game}", game))
 
 
 
-HOOKS_EN = {
-    "ras_audio": ["{NAME} COULDN'T STOP LAUGHING 😂", "I HAVEN'T LAUGHED THIS HARD", "WHAT WAS THAT? 😂"],
-    "ras": ["{NAME} COULDN'T STOP LAUGHING 😂", "THIS ONE ENDED ME 💀", "WHAT WAS THAT? 😂"],
-    "injuratura": ["{NAME} LOST IT 🤬", "{GAME} RAGE MOMENT", "HE CAN'T TAKE IT ANYMORE 😤"],
-    "exclamatie": ["NO WAY THIS HAPPENED", "{NAME}'S REACTION 😱", "WAIT FOR THE END", "NOBODY SAW THIS COMING"],
-    "giveaway": ["GIVEAWAY ON STREAM 🎁", "WHO WINS THE PRIZE?"],
-    "actiune": ["BEST {GAME} MOMENT SO FAR", "{GAME} = PURE CHAOS", "{GAME} ON STREAM HITS DIFFERENT"],
-    "chat": ["CHAT WENT TOO FAR 😂", "{NAME} VS CHAT 😂", "WHAT CHAT SAID"],
-    "_": ["GOLDEN MOMENT FROM THE STREAM", "WAIT FOR IT 😂", "THIS HAD TO BE CLIPPED"],
-}
 TITLES_EN = {
     "ras_audio": ["{Name} couldn't stop laughing 😂", "Funniest moment of the stream 😂", "That laugh is contagious 😂"],
     "ras": ["{Name} couldn't stop laughing 😂", "I cried laughing at this 😭", "Funniest moment of the stream 😂",
@@ -118,13 +102,13 @@ def quote(words_rel, max_words=6):
     return None
 
 
-def new_title(cat, words_rel=(), avoid=(), rnd=random):
+def new_title(cat, words_rel=(), avoid=(), rnd=random, game=None):
     """A title different from the ones in `avoid` (used by '🔄 Refă textul')."""
     T = _pick(TITLES, TITLES_EN)
-    pool = [fill(t) for t in list(T.get(cat, T["_"])) + T["_"][:3]]
+    pool = [fill(t, game=game) for t in list(T.get(cat, T["_"])) + T["_"][:3]]
     q = quote(list(words_rel))
     if q:
-        pool += [fill(t).replace("{q}", q) for t in _pick(QUOTE_TITLES, QUOTE_TITLES_EN)]
+        pool += [fill(t, game=game).replace("{q}", q) for t in _pick(QUOTE_TITLES, QUOTE_TITLES_EN)]
     fresh = [t for t in pool if t not in set(avoid)] or pool
     return rnd.choice(fresh)
 
@@ -156,9 +140,18 @@ def order_tags(tags):
     return out
 
 
-def pick_hashtags(c, rnd=random):
-    """required hashtag (if any) + your fixed hashtags + a few random popular ones, max `hashtags_max` in total."""
-    fixed = order_tags(c.get("hashtags") or [])
+_GTA_TAG = re.compile(r"^#gta(6|vi|5|v)?$", re.I)
+
+
+def pick_hashtags(c, rnd=random, game=None):
+    """required hashtag (if any) + the game's hashtag (#CS2) + your fixed hashtags + a few random popular ones,
+    max `hashtags_max` in total. Unknown game = neutral (#gaming #clips) unless you set your own hashtags.
+    An old built-in #gta6 is dropped unless the clip really is GTA."""
+    from . import game as _g
+    gtag = _g.tag_for(game)
+    mine = [t for t in (c.get("hashtags") or []) if gtag.lower().startswith("#gta") or not _GTA_TAG.match(norm_tag(t))]
+    base = ([gtag] if gtag else []) + mine
+    fixed = order_tags(base if (gtag or mine) else _g.NEUTRAL_TAGS)
     mx = max(1, int(c.get("hashtags_max", 5)))
     pool = [t for t in order_tags(c.get("extra_hashtags") or []) if t.lower() not in {f.lower() for f in fixed}]
     rnd.shuffle(pool)
@@ -174,8 +167,10 @@ def finalize_caption(text):
     return (body + " " + " ".join(order_tags(found))).strip()[:2000]
 
 
-def make(cand, words_rel, rnd=random):
+def make(cand, words_rel, rnd=random, game=None):
+    """-> (hook, title, category). The hook is burned into the video, so it is ONLY words the streamer really said
+    (a short quote); when there is none the clip simply has no hook box. Game names go in titles/hashtags only."""
     cat = category(cand.get("cats", []))
-    hooks, titles = _pick(HOOKS, HOOKS_EN), _pick(TITLES, TITLES_EN)
-    hook = quote_hook(words_rel, cand["peak"] - cand["start"]) or fill(rnd.choice(hooks.get(cat, hooks["_"])))
-    return hook, fill(rnd.choice(titles.get(cat, titles["_"]))), cat
+    titles = _pick(TITLES, TITLES_EN)
+    hook = quote_hook(words_rel, cand["peak"] - cand["start"]) or ""
+    return hook, fill(rnd.choice(titles.get(cat, titles["_"])), game=game), cat

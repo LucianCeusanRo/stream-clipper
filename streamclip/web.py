@@ -4,7 +4,7 @@ import hmac, json, mimetypes, re, secrets, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
-from . import accounts, app, db, effects, i18n, jobs, progress, styles, render, pipeline, texts, updater, viral
+from . import accounts, app, db, effects, game, i18n, jobs, progress, styles, render, pipeline, texts, updater, viral
 from .util import DATA, cfg, log, reset_settings, save_settings
 
 WEB = Path(__file__).parent / "web"
@@ -361,6 +361,16 @@ class H(BaseHTTPRequestHandler):
                         Path(r["src"]).unlink(missing_ok=True)
                     db.x("UPDATE clips SET status='deleted' WHERE id=?", (cid,))   # row kept -> never re-clipped
                     progress.count("deleted")
+                elif a == "set_game":
+                    # your game for this clip (empty = detect automatically); title/description/hashtags follow it
+                    g = game.normalize(str(b.get("game") or "")[:80].strip())
+                    db.x("UPDATE clips SET game=? WHERE id=?", (g or None, cid))
+                    if r["status"] in ("posted", "posting"):
+                        return self._json({"ok": True, "game": g})
+                    try:
+                        return self._json(dict(pipeline.retext(cid), ok=True, game=g))
+                    except pipeline.ClipError as e:
+                        return self._json({"error": str(e)}, 400)
                 elif a == "retext":
                     try:
                         return self._json(dict(pipeline.retext(cid), ok=True))

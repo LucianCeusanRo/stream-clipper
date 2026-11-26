@@ -34,7 +34,7 @@ KEYWORDS = [
     (1.2, r"\b(giveaway|c[aâ][sș]tig\w*|ps5|premiu\w*|tragere|c[aâ][sș]tig[aă]tor\w*|bmw|mercedes|bani|"
           r"donat\w*|super ?chat|abonat\w*)"),                                                                 # giveaway hype
     (0.8, r"\b(poli[tț]i\w*|ma[sș]in\w*|accident|explod\w*|moare|murit|omor\w*|jaf|banc[aă]|evad\w*|"
-          r"lucia|jason|vice city|misiun\w*)"),                                                                # GTA action
+          r"misiun\w*)"),                                                                                  # game action
     (1.0, r"\b(chat\w*|voi|v-am zis|ce zice[tț]i|scrie[tț]i|uita[tț]i-v[aă])"),                                 # banter with chat
 ]
 KEYWORDS = [(w, p + "|" + en) for (w, p), en in zip(KEYWORDS, KEYWORDS_EN)]

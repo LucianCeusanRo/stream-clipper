@@ -24,7 +24,7 @@ Penalizează: momente plictisitoare, liniște, citit donații fără reacție, r
 
 Răspunde DOAR cu JSON:
 {"scor": 0-10,
- "categorie": "amuzant|rage|reactie|giveaway|gta|chat|plictisitor",
+ "categorie": "amuzant|rage|reactie|giveaway|actiune|chat|plictisitor",
  "start": secunda de început recomandată (ca hook-ul să fie în primele 1-2 secunde),
  "end": secunda de final (după poantă, clipul 20-60s),
  "hook": "text scurt pe ecran, MAJUSCULE, max 7 cuvinte, cu diacritice, ex: {NAME} A LUAT-O RAZNA 😂",
@@ -44,7 +44,7 @@ Penalize: boring parts, silence, reading donations without a reaction, ads/spons
 
 Reply ONLY with JSON:
 {"scor": 0-10,
- "categorie": "amuzant|rage|reactie|giveaway|gta|chat|plictisitor",
+ "categorie": "amuzant|rage|reactie|giveaway|actiune|chat|plictisitor",
  "start": recommended start second (so the hook lands in the first 1-2 seconds),
  "end": end second (after the payoff, clip 20-60 s),
  "hook": "short on-screen text, UPPERCASE, max 7 words, in the language of the transcript",
@@ -91,7 +91,7 @@ def chat(system, user, timeout=90):
     return json.loads(m.group(0)) if m else {}
 
 
-def judge(cand, words_rel):
+def judge(cand, words_rel, game=None):
     """cand: detector candidate (times relative to clip window); words_rel: words with clip-relative times.
     Returns dict or None on failure."""
     lines = [f"[{i}] {w['s']:.1f}s {w['w']}" for i, w in enumerate(words_rel)]
@@ -99,7 +99,7 @@ def judge(cand, words_rel):
             f"Durata ferestrei: {cand['end'] - cand['start']:.0f}s (secundele de mai jos sunt relative la început).\n\n"
             "Cuvinte:\n" + "\n".join(lines[:600]))
     try:
-        return chat(texts.fill(PROMPT_JUDGE if texts.is_ro() else PROMPT_JUDGE_EN), user)
+        return chat(texts.fill(PROMPT_JUDGE if texts.is_ro() else PROMPT_JUDGE_EN, game=game), user)
     except Exception as e:
         log.warning("LLM indisponibil (%s) -> continui fara", str(e)[:120])
         return None
@@ -110,10 +110,10 @@ PROMPT_TITLE = ("Ești editor de TikTok pentru clipurile streamerului {name} ({g
                 "cu 1 emoji, FĂRĂ hashtag-uri, diferit de titlul vechi. Răspunde doar JSON: {\"titlu\": \"...\"}")
 
 
-def retitle(text, old_title):
+def retitle(text, old_title, game=None):
     """New viral title for a clip (used by '🔄 Refă textul'). None if the LLM is down."""
     try:
-        j = chat(texts.fill(PROMPT_TITLE if texts.is_ro() else PROMPT_TITLE_EN), f"Titlul vechi: {old_title}\nCe se spune în clip: {text[:1500]}", timeout=45)
+        j = chat(texts.fill(PROMPT_TITLE if texts.is_ro() else PROMPT_TITLE_EN, game=game), f"Titlul vechi: {old_title}\nCe se spune în clip: {text[:1500]}", timeout=45)
         t = " ".join(str(j.get("titlu", "")).replace("#", " ").split())
         return t[:90] if t and t != old_title else None
     except Exception as e:

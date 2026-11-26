@@ -2,7 +2,7 @@
 TikTok live replay - anything yt-dlp can read - or a video file on the PC). Runs next to the channel watcher."""
 import math, re, threading, time, uuid
 from pathlib import Path
-from . import db, pipeline, progress
+from . import db, game, pipeline, progress
 from .util import DATA, cfg, ffprobe_duration, log, run, tool, ytdlp_opts
 
 JOBS = {}                     # id -> dict (shown in the app)
@@ -87,17 +87,37 @@ def _set(j, p, stage):
     j["progress"] = int(max(j["progress"], min(99, p))); j["stage"] = stage
 
 
+def live_stream_url(info, max_h):
+    """-> (media url, http headers) of the best live format that is <= max_h high (Twitch, Kick, YouTube)."""
+    fm = [f for f in (info.get("formats") or []) if f.get("url") and f.get("vcodec") != "none"]
+    ok = [f for f in fm if (f.get("height") or 0) and f["height"] <= max_h]
+    best = max(ok, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0)) if ok else None
+    if best:
+        return best["url"], dict(info.get("http_headers") or {}, **(best.get("http_headers") or {}))
+    if info.get("url"):
+        return info["url"], dict(info.get("http_headers") or {})
+    f = next((f for f in reversed(info.get("formats") or []) if f.get("url")), None)
+    return (f["url"], dict(info.get("http_headers") or {})) if f else (None, {})
+
+
 def _fetch(j, folder):
     """-> (local media path, timeline offset in seconds, title)."""
     src, s, e = j["source"], j["start"], j["end"]
     if is_local(src):
         p = Path(src.replace("file://", ""))
+        j["game"] = game.remember_from("job-" + j["id"], {"title": p.stem})
         return p, 0.0, p.stem
     from yt_dlp import YoutubeDL
     _set(j, 1, "citesc linkul…")
-    with YoutubeDL(dict(ytdlp_opts(), quiet=True, skip_download=True, noplaylist=True)) as y:
-        info = y.extract_info(src, download=False)
+    try:
+        with YoutubeDL(dict(ytdlp_opts(), quiet=True, skip_download=True, noplaylist=True)) as y:
+            info = y.extract_info(src, download=False)
+    except Exception as e:
+        if "not currently live" in str(e) or "is offline" in str(e).lower():
+            raise RuntimeError("canalul nu e live acum (Twitch/Kick/YouTube): dă linkul unui VOD sau așteaptă live-ul") from None
+        raise
     title = info.get("title") or src
+    j["game"] = game.remember_from("job-" + j["id"], info, src)      # Twitch/Kick/YouTube category -> titles + hashtags only
     max_h = cfg().get("video_max_height", 1080)
     out = folder / "src.mp4"
 
@@ -112,10 +132,14 @@ def _fetch(j, folder):
     if info.get("is_live") or info.get("live_status") == "is_live":
         secs = (e - s) if (s is not None and e is not None) else LIVE_REC
         _set(j, 2, f"e LIVE: înregistrez {secs / 60:.0f} minute…")
-        url = info.get("url") or next((f["url"] for f in reversed(info.get("formats") or []) if f.get("url")), None)
+        url, hdrs = live_stream_url(info, max_h)
         if not url:
             raise RuntimeError("nu găsesc fluxul video al live-ului")
-        run([tool("ffmpeg"), "-y", "-v", "error", "-i", url, "-t", f"{secs}", "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
+        # Twitch / Kick / YouTube HLS: same headers as yt-dlp, and reconnect if the connection drops while recording
+        pre = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5", "-rw_timeout", "30000000"]
+        if hdrs:
+            pre += ["-headers", "".join(f"{k}: {v}\r\n" for k, v in hdrs.items())]
+        run([tool("ffmpeg"), "-y", "-v", "error", *pre, "-i", url, "-t", f"{secs}", "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
              folder / "src.ts"], timeout=secs + 600)
         return folder / "src.ts", 0.0, title
     dur = info.get("duration") or 0

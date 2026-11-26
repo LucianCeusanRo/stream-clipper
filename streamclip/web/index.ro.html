@@ -370,6 +370,8 @@ async function clipsPage(v){await loadStyles();
        `<button class="pri" onclick="newClipDlg()">✂️ Lipește un link</button> <button onclick="go('settings','clipping')">👁 Urmărește un canal</button>`));return}
   v.innerHTML=tools+'<div class="grid">'+list.map(c=>card(c,'clips')).join('')+'</div>'}
 function empty(ic,t,p,btn){return `<div class="empty"><div class="big">${ic}</div><h3>${t}</h3><p>${p}</p>${btn||''}</div>`}
+function gameBox(c){return `<input class="sm" style="width:100%;font-size:12px;padding:4px 6px;margin:4px 0" value="${esc(c.game||'')}" placeholder="🎮 Joc: detectat automat (scrie ca să schimbi)" title="Jocul din titlul și hashtag-urile acestui clip (niciodată pe video). Gol = detectat din stream; necunoscut = neutru #gaming #clips" onchange="setGame(${c.id},this.value)">`}
+async function setGame(id,v){const r=await api('/api/clip',{id,action:'set_game',game:v});const t=$('#cap'+id);if(t&&r.caption)t.value=r.caption;toast(v?'Joc setat ✔':'Joc: automat ✔')}
 function accSelect(c){if(ACC.length<2)return '';return `<select class="sm" style="font-size:12px;padding:4px 6px" onchange="setAcc(${c.id},this.value)" data-tip="Ce cont postează clipul">
   <option value="">🔄 Automat (rotație)</option>${ACC.filter(a=>a.enabled).map(a=>`<option value="${esc(a.id)}" ${c.account===a.id?'selected':''}>${a.platform==='youtube'?'▶️':'🎵'} ${esc(a.name)}</option>`).join('')}</select>`}
 async function setAcc(id,acc){await api('/api/clip',{id,action:'set_account',account:acc});toast(acc?'Se va posta pe '+accName(acc):'Se va folosi rotația implicită')}
@@ -395,6 +397,7 @@ function card(c){
   ${editable(c)?`<textarea id="cap${c.id}" onchange="saveCap(${c.id})" title="Titlu + descriere + hashtag-uri. Editează liber.">${esc(c.caption)}</textarea>`:`<div style="font-size:13px">${esc(c.caption)}</div>`}
   ${c.status&&!['pending'].includes(c.status)?`<div style="font-size:12px"><span class="st ${c.status}">${c.status}</span> ${esc(c.error||'')} ${when(c.posted_at)}</div>`:''}
   ${editable(c)?`<div class="row2"><button class="sm" onclick="retext(${c.id})" title="Titlu + descriere + hashtag-uri noi (altă variantă la fiecare apăsare)">🔄 Text nou</button>
+  ${gameBox(c)}
   <button class="sm" onclick="toggleRc(${c.id})" ${c.can_recut?'':'disabled title="Sursa acestui clip nu mai există (clip vechi)"'} title="Mută începutul/sfârșitul și randează din nou">✂️ Retaie</button></div>${accSelect(c)}
   <div class="rc ${RC[c.id]?'open':''}" id="rc${c.id}">${rcPanel(c.id)}</div>`:''}
   <div class="row">${actions(c)}</div></div></div>`}
@@ -488,7 +491,7 @@ function accEdit(id){go('accounts');const a=id?ACC.find(x=>x.id===id):null;ACCED
   $('#accB').innerHTML=`${a?'':`<div class="opts">${[['tiktok','🎵 TikTok','Postează dintr-o fereastră de browser cu logarea lui salvată'],['youtube','▶️ YouTube Shorts','API oficial cu clientul tău OAuth sau export pentru upload manual']].map(([k,t,d])=>`<div class="opt ${k===p?'act':''}" onclick="accPlat('${k}')" data-k="${k}"><b>${t}</b><small>${d}</small></div>`).join('')}</div>`}
    <input type="hidden" id="ae_platform" value="${p}">
    <div class="fl2"><span>Nume (doar pentru tine, ex. „TikTok principal”, „Canal clipuri”)</span><input type="text" id="ae_name" value="${esc(a?a.name:'')}" placeholder="Contul meu"></div>
-   <div class="fl2"><span>Hashtag-uri pentru acest cont (gol = cele globale)</span><input type="text" id="ae_hashtags" value="${esc(a?(a.hashtags||[]).join(' '):'')}" placeholder="#gta6 #gaming #clips"></div>
+   <div class="fl2"><span>Hashtag-uri pentru acest cont (gol = cele globale)</span><input type="text" id="ae_hashtags" value="${esc(a?(a.hashtags||[]).join(' '):'')}" placeholder="#gaming #clips"></div>
    <div class="fl2"><span>Hashtag obligatoriu (ex. cerut de o campanie de clipuri; mereu primul, trebuie să devină tag real)</span><input type="text" id="ae_required_hashtag" value="${esc(a?a.required_hashtag:'')}" placeholder="(niciunul)"></div>
    <div class="row" style="gap:10px"><div class="fl2" style="flex:1"><span>Maxim postări pe zi</span><input type="number" id="ae_daily_cap" min="1" max="100" value="${a?a.daily_cap:D.daily_cap}"></div>
     <div class="fl2" style="flex:1"><span>Minute între postări (min)</span><input type="number" id="ae_interval_min" min="5" value="${a?a.interval_min:D.interval_min}"></div>
@@ -550,7 +553,7 @@ async function settingsPage(v){if(!sub)sub='general';SET=await api('/api/setting
   if(sub==='clipping'){const fx=s.effects||{};b.innerHTML=head('Urmărire și tăiere','Ce streamer urmărești și cum se taie și arată clipurile.')+grp('Streamer',
      fld('channel_url','Canal urmărit','Canal YouTube. Gol = fără urmărire automată (lipești linkuri). Doar streameri care permit clipuri.',tx('channel_url',s.channel_url,'https://www.youtube.com/@channel'))+
      fld('streamer_name','Numele streamerului','Folosit în titluri și hook-uri.',tx('streamer_name',s.streamer_name,'Alex'))+
-     fld('game','Joc sau subiect','ex. GTA 6, Just Chatting.',tx('game',s.game,'GTA 6'))+
+     fld('game','Joc implicit (opțional)','Jocul se detectează din stream (categoria Twitch / Kick / YouTube) și apare doar în titluri și hashtag-uri, niciodată pe video. Se folosește doar dacă nu poate fi detectat. Gol = neutru #gaming #clips.',tx('game',s.game,'e.g. Counter-Strike 2'))+
      fld('language','Limba vorbită','Whisper: en, es, ro, de… sau auto.',tx('language',s.language||'auto','auto'))+
      fld('credit_text','Credit pe fiecare clip','ex. @canal pe YouTube.',tx('credit_text',s.credit_text,'@channel'))+
      fld('live_title_filter','Filtru titlu live','Regex; se taie doar live-urile cu titlul potrivit. Gol = toate.',tx('live_title_filter',s.live_title_filter,'')))+
@@ -571,7 +574,7 @@ async function settingsPage(v){if(!sub)sub='general';SET=await api('/api/setting
     grp('Auto-postare',fld('auto_post_min_viral','Șansă minimă de viral (%)','Clipurile aprobate de tine merg mereu.',nm('auto_post_min_viral',s.auto_post_min_viral??40,0,100))+
      fld('post_order','Ordine','',sl('post_order',s.post_order==='best_first'?'viral_first':s.post_order,[['viral_first','🔥 Cele mai virale întâi'],['newest_first','🆕 Cele mai noi întâi']]))+
      fld('visibility','Vizibilitate TikTok implicită','Conturile o pot schimba.',sl('visibility',s.visibility,['public','private'])))+
-    grp('Hashtag-uri și descriere',fld('hashtags','Hashtag-uri adăugate mereu','Conturile cu hashtag-uri proprii le folosesc pe ale lor.',tx('hashtags',(s.hashtags||[]).join(' '),'#gta6 #gaming','tags'))+
+    grp('Hashtag-uri și descriere',fld('hashtags','Hashtag-uri adăugate mereu','Conturile cu hashtag-uri proprii le folosesc pe ale lor.',tx('hashtags',(s.hashtags||[]).join(' '),'#gaming #clips','tags'))+
      fld('extra_hashtags','Hashtag-uri populare (alese la întâmplare)','Pentru varietate.',tx('extra_hashtags',(s.extra_hashtags||[]).join(' '),'#fyp #viral','tags'))+
      fld('hashtags_max','Maxim hashtag-uri pe clip','1–10, inclusiv cel obligatoriu.',nm('hashtags_max',s.hashtags_max??5,1,10))+
      fld('required_hashtag','Hashtag obligatoriu','ex. cerut de o campanie de clipuri. Mereu primul; postarea se oprește dacă nu devine tag real, apăsabil. Gol = niciunul.',tx('required_hashtag',s.required_hashtag,'(none)'))+
@@ -626,13 +629,13 @@ function wzStep(n){WZ.step=Math.max(1,Math.min(WZ.n,n));localStorage.setItem('sc
     <p class="muted" style="font-size:12.5px">Poți schimba asta oricând în Setări → Performanță.</p>`;
   if(WZ.step===3)B.innerHTML=`<div class="opts">${wzOpt('plat','tiktok',d.plat,'🎵 TikTok','Postează dintr-o fereastră de browser cu logarea lui salvată')}${wzOpt('plat','youtube',d.plat,'▶️ YouTube Shorts',ACCX.youtube_configured?'API oficial (clientul tău OAuth)':'Export pentru upload manual (API opțional)')}${wzOpt('plat','none',d.plat,'⏭ Mai târziu','Deocamdată doar fac clipuri')}</div>
     <div class="fl2"><span>Numele contului (doar pentru tine)</span><input type="text" id="wz_name" value="${esc(d.name||main.name||'')}" placeholder="TikTok principal"></div>
-    <div class="fl2"><span>Hashtag-uri pentru acest cont (opțional)</span><input type="text" id="wz_tags" value="${esc(d.tags||'')}" placeholder="#gta6 #gaming #clips"></div>
+    <div class="fl2"><span>Hashtag-uri pentru acest cont (opțional)</span><input type="text" id="wz_tags" value="${esc(d.tags||'')}" placeholder="#gaming #clips"></div>
     <p><button onclick="wzLogin()">🔑 Loghează-te acum</button> <span class="muted" style="font-size:12.5px">TikTok: se deschide o fereastră de browser, te loghezi o dată. YouTube: se deschide pagina de consimțământ Google (cere clientul tău OAuth).</span></p>
     <p class="muted" style="font-size:12.5px">Adaugi mai târziu alte conturi TikTok și canale YouTube în <b>Conturi</b>. Fiecare are logarea, hashtag-urile și limitele lui.</p>`;
   if(WZ.step===4)B.innerHTML=`<p>Pe ce streamer faci clipuri? <b>Tai doar streameri care permit asta</b> (mulți au programe de clipuri) și îi creditezi.</p>
     <div class="fl2"><span>Canal YouTube de urmărit (opțional – poți și doar să lipești linkuri)</span><input type="text" id="wz_ch" value="${esc(s.channel_url||'')}" placeholder="https://www.youtube.com/@channel"></div>
     <div class="row" style="gap:10px"><div class="fl2" style="flex:1"><span>Numele streamerului</span><input type="text" id="wz_sn" value="${esc(s.streamer_name||'')}" placeholder="Alex"></div>
-    <div class="fl2" style="flex:1"><span>Joc sau subiect</span><input type="text" id="wz_game" value="${esc(s.game||'GTA 6')}"></div><div class="fl2" style="width:120px"><span>Limba vorbită</span><input type="text" id="wz_lang" value="${esc(s.language||'auto')}"></div></div>
+    <div class="fl2" style="flex:1"><span>Joc implicit (opțional, detectat automat)</span><input type="text" id="wz_game" value="${esc(s.game||'')}"></div><div class="fl2" style="width:120px"><span>Limba vorbită</span><input type="text" id="wz_lang" value="${esc(s.language||'auto')}"></div></div>
     <div class="fl2"><span>Textul de credit de pe fiecare clip</span><input type="text" id="wz_cr" value="${esc(s.credit_text||'')}" placeholder="@canal pe YouTube"></div>`;
   if(WZ.step===5)B.innerHTML=`<p>Gata. Câteva lucruri bune de știut:</p><ul style="line-height:1.8;padding-left:18px">
     <li><b>Verificarea manuală e implicită.</b> Nu se postează nimic până nu apeși 📤 Postează pe un clip.</li><li><b>Auto-postarea e OFF.</b> Pornește-o din bara laterală doar dacă streamerul permite.</li>

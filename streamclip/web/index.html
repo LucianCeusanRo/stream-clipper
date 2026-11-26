@@ -370,6 +370,8 @@ async function clipsPage(v){await loadStyles();
        `<button class="pri" onclick="newClipDlg()">✂️ Paste a link</button> <button onclick="go('settings','clipping')">👁 Watch a channel</button>`));return}
   v.innerHTML=tools+'<div class="grid">'+list.map(c=>card(c,'clips')).join('')+'</div>'}
 function empty(ic,t,p,btn){return `<div class="empty"><div class="big">${ic}</div><h3>${t}</h3><p>${p}</p>${btn||''}</div>`}
+function gameBox(c){return `<input class="sm" style="width:100%;font-size:12px;padding:4px 6px;margin:4px 0" value="${esc(c.game||'')}" placeholder="🎮 Game: auto-detected (type to change)" title="Game used in this clip's title and hashtags (never on the video). Empty = detected from the stream; unknown = neutral #gaming #clips" onchange="setGame(${c.id},this.value)">`}
+async function setGame(id,v){const r=await api('/api/clip',{id,action:'set_game',game:v});const t=$('#cap'+id);if(t&&r.caption)t.value=r.caption;toast(v?'Game set ✔':'Game: automatic ✔')}
 function accSelect(c){if(ACC.length<2)return '';return `<select class="sm" style="font-size:12px;padding:4px 6px" onchange="setAcc(${c.id},this.value)" data-tip="Which account posts this clip">
   <option value="">🔄 Auto (rotation)</option>${ACC.filter(a=>a.enabled).map(a=>`<option value="${esc(a.id)}" ${c.account===a.id?'selected':''}>${a.platform==='youtube'?'▶️':'🎵'} ${esc(a.name)}</option>`).join('')}</select>`}
 async function setAcc(id,acc){await api('/api/clip',{id,action:'set_account',account:acc});toast(acc?'Will post to '+accName(acc):'Will use the default rotation')}
@@ -395,6 +397,7 @@ function card(c){
   ${editable(c)?`<textarea id="cap${c.id}" onchange="saveCap(${c.id})" title="Title + description + hashtags. Edit freely.">${esc(c.caption)}</textarea>`:`<div style="font-size:13px">${esc(c.caption)}</div>`}
   ${c.status&&!['pending'].includes(c.status)?`<div style="font-size:12px"><span class="st ${c.status}">${c.status}</span> ${esc(c.error||'')} ${when(c.posted_at)}</div>`:''}
   ${editable(c)?`<div class="row2"><button class="sm" onclick="retext(${c.id})" title="New title + description + hashtags (a different variant on every press)">🔄 New text</button>
+  ${gameBox(c)}
   <button class="sm" onclick="toggleRc(${c.id})" ${c.can_recut?'':'disabled title="The source of this clip is gone (old clip)"'} title="Move the start/end and render again">✂️ Re-cut</button></div>${accSelect(c)}
   <div class="rc ${RC[c.id]?'open':''}" id="rc${c.id}">${rcPanel(c.id)}</div>`:''}
   <div class="row">${actions(c)}</div></div></div>`}
@@ -488,7 +491,7 @@ function accEdit(id){go('accounts');const a=id?ACC.find(x=>x.id===id):null;ACCED
   $('#accB').innerHTML=`${a?'':`<div class="opts">${[['tiktok','🎵 TikTok','Posts from a browser window with its own saved login'],['youtube','▶️ YouTube Shorts','Official API with your own OAuth client, or export for manual upload']].map(([k,t,d])=>`<div class="opt ${k===p?'act':''}" onclick="accPlat('${k}')" data-k="${k}"><b>${t}</b><small>${d}</small></div>`).join('')}</div>`}
    <input type="hidden" id="ae_platform" value="${p}">
    <div class="fl2"><span>Name (only for you, e.g. “Main TikTok”, “Clips channel”)</span><input type="text" id="ae_name" value="${esc(a?a.name:'')}" placeholder="My account"></div>
-   <div class="fl2"><span>Hashtags for this account (empty = use the global ones)</span><input type="text" id="ae_hashtags" value="${esc(a?(a.hashtags||[]).join(' '):'')}" placeholder="#gta6 #gaming #clips"></div>
+   <div class="fl2"><span>Hashtags for this account (empty = use the global ones)</span><input type="text" id="ae_hashtags" value="${esc(a?(a.hashtags||[]).join(' '):'')}" placeholder="#gaming #clips"></div>
    <div class="fl2"><span>Required hashtag (e.g. a clipping campaign asks for it; always first, must become a real tag)</span><input type="text" id="ae_required_hashtag" value="${esc(a?a.required_hashtag:'')}" placeholder="(none)"></div>
    <div class="row" style="gap:10px"><div class="fl2" style="flex:1"><span>Max posts per day</span><input type="number" id="ae_daily_cap" min="1" max="100" value="${a?a.daily_cap:D.daily_cap}"></div>
     <div class="fl2" style="flex:1"><span>Minutes between posts (min)</span><input type="number" id="ae_interval_min" min="5" value="${a?a.interval_min:D.interval_min}"></div>
@@ -550,7 +553,7 @@ async function settingsPage(v){if(!sub)sub='general';SET=await api('/api/setting
   if(sub==='clipping'){const fx=s.effects||{};b.innerHTML=head('Watching & clipping','Which streamer to watch and how clips are cut and styled.')+grp('Streamer',
      fld('channel_url','Channel to watch','YouTube channel. Empty = no automatic watching (paste links instead). Only streamers who allow clipping.',tx('channel_url',s.channel_url,'https://www.youtube.com/@channel'))+
      fld('streamer_name','Streamer name','Used in titles and hooks.',tx('streamer_name',s.streamer_name,'Alex'))+
-     fld('game','Game or topic','e.g. GTA 6, Just Chatting.',tx('game',s.game,'GTA 6'))+
+     fld('game','Default game (optional)','The game is detected from the stream (Twitch / Kick / YouTube category) and written in titles and hashtags only, never on the video. Used only when it cannot be detected. Empty = neutral #gaming #clips.',tx('game',s.game,'e.g. Counter-Strike 2'))+
      fld('language','Speech language','Whisper: en, es, ro, de… or auto.',tx('language',s.language||'auto','auto'))+
      fld('credit_text','Credit on every clip','e.g. @channel on YouTube.',tx('credit_text',s.credit_text,'@channel'))+
      fld('live_title_filter','Live title filter','Regex; only lives whose title matches are clipped. Empty = all.',tx('live_title_filter',s.live_title_filter,'')))+
@@ -571,7 +574,7 @@ async function settingsPage(v){if(!sub)sub='general';SET=await api('/api/setting
     grp('Auto-post',fld('auto_post_min_viral','Minimum viral chance (%)','Clips you approve yourself always go.',nm('auto_post_min_viral',s.auto_post_min_viral??40,0,100))+
      fld('post_order','Order','',sl('post_order',s.post_order==='best_first'?'viral_first':s.post_order,[['viral_first','🔥 Most viral first'],['newest_first','🆕 Newest first']]))+
      fld('visibility','Default TikTok visibility','Accounts can override it.',sl('visibility',s.visibility,['public','private'])))+
-    grp('Hashtags & description',fld('hashtags','Hashtags always added','Accounts with their own hashtags use those instead.',tx('hashtags',(s.hashtags||[]).join(' '),'#gta6 #gaming','tags'))+
+    grp('Hashtags & description',fld('hashtags','Hashtags always added','Accounts with their own hashtags use those instead.',tx('hashtags',(s.hashtags||[]).join(' '),'#gaming #clips','tags'))+
      fld('extra_hashtags','Popular hashtags (random pick)','For variety.',tx('extra_hashtags',(s.extra_hashtags||[]).join(' '),'#fyp #viral','tags'))+
      fld('hashtags_max','Max hashtags per clip','1–10, including the required one.',nm('hashtags_max',s.hashtags_max??5,1,10))+
      fld('required_hashtag','Required hashtag','e.g. asked for by a clipping campaign. Always first; posting stops if it does not become a real, clickable tag. Empty = none.',tx('required_hashtag',s.required_hashtag,'(none)'))+
@@ -626,13 +629,13 @@ function wzStep(n){WZ.step=Math.max(1,Math.min(WZ.n,n));localStorage.setItem('sc
     <p class="muted" style="font-size:12.5px">You can change this later in Settings → Performance.</p>`;
   if(WZ.step===3)B.innerHTML=`<div class="opts">${wzOpt('plat','tiktok',d.plat,'🎵 TikTok','Posts from a browser window with its own saved login')}${wzOpt('plat','youtube',d.plat,'▶️ YouTube Shorts',ACCX.youtube_configured?'Official API (your OAuth client)':'Export for manual upload (API optional)')}${wzOpt('plat','none',d.plat,'⏭ Later','Just make clips for now')}</div>
     <div class="fl2"><span>Account name (only for you)</span><input type="text" id="wz_name" value="${esc(d.name||main.name||'')}" placeholder="Main TikTok"></div>
-    <div class="fl2"><span>Hashtags for this account (optional)</span><input type="text" id="wz_tags" value="${esc(d.tags||'')}" placeholder="#gta6 #gaming #clips"></div>
+    <div class="fl2"><span>Hashtags for this account (optional)</span><input type="text" id="wz_tags" value="${esc(d.tags||'')}" placeholder="#gaming #clips"></div>
     <p><button onclick="wzLogin()">🔑 Log in now</button> <span class="muted" style="font-size:12.5px">TikTok: a browser window opens, you log in once. YouTube: Google's consent page opens (needs your OAuth client).</span></p>
     <p class="muted" style="font-size:12.5px">Add more TikTok accounts and YouTube channels later in <b>Accounts</b>. Each one has its own login, hashtags and limits.</p>`;
   if(WZ.step===4)B.innerHTML=`<p>Which streamer do you clip? <b>Only clip streamers who allow it</b> (many run clipping programs) and credit them.</p>
     <div class="fl2"><span>YouTube channel to watch (optional – you can also just paste links)</span><input type="text" id="wz_ch" value="${esc(s.channel_url||'')}" placeholder="https://www.youtube.com/@channel"></div>
     <div class="row" style="gap:10px"><div class="fl2" style="flex:1"><span>Streamer name</span><input type="text" id="wz_sn" value="${esc(s.streamer_name||'')}" placeholder="Alex"></div>
-    <div class="fl2" style="flex:1"><span>Game or topic</span><input type="text" id="wz_game" value="${esc(s.game||'GTA 6')}"></div><div class="fl2" style="width:120px"><span>Speech language</span><input type="text" id="wz_lang" value="${esc(s.language||'auto')}"></div></div>
+    <div class="fl2" style="flex:1"><span>Default game (optional, detected automatically)</span><input type="text" id="wz_game" value="${esc(s.game||'')}"></div><div class="fl2" style="width:120px"><span>Speech language</span><input type="text" id="wz_lang" value="${esc(s.language||'auto')}"></div></div>
     <div class="fl2"><span>Credit text shown on every clip</span><input type="text" id="wz_cr" value="${esc(s.credit_text||'')}" placeholder="@channel on YouTube"></div>`;
   if(WZ.step===5)B.innerHTML=`<p>All set. A few things worth knowing:</p><ul style="line-height:1.8;padding-left:18px">
     <li><b>Manual review is the default.</b> Nothing is posted until you press 📤 Post on a clip.</li><li><b>Auto-post is OFF.</b> Turn it on in the sidebar only if the streamer allows it.</li>

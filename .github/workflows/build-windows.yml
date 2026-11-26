@@ -42,7 +42,8 @@ jobs:
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           if [[ ! -f "$ISCC" ]]; then choco install innosetup -y --no-progress; fi
           "$ISCC" "//DAppVersion=$VER" installer/StreamClipper.iss
-          cd dist && sha256sum StreamClipper-update-v$VER.zip StreamClipper-Setup-v$VER.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
+          cp "dist/StreamClipper-Setup-v$VER.exe" dist/StreamClipper-Setup.exe     # stable name for the README/website link
+          cd dist && sha256sum StreamClipper-update-v$VER.zip StreamClipper-Setup-v$VER.exe StreamClipper-Setup.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: Stream-Clipper

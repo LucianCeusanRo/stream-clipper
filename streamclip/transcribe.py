@@ -63,6 +63,12 @@ def load_wav(path):
 _busy = threading.Lock()        # one transcription at a time (channel watcher + "Generate clips" jobs share the GPU)
 
 
+def _prompt(c):
+    """Whisper hint words from the settings; the old built-in GTA names are ignored (they bias every stream)."""
+    ip = str(c.get("initial_prompt") or "").strip()
+    return None if (not ip or "Vice City" in ip) else ip
+
+
 def transcribe(wav_path):
     """-> list of words {'w','s','e','p'} (p = probability) and list of segments {'s','e','t'}."""
     if not _busy.acquire(blocking=False):
@@ -90,7 +96,7 @@ def _transcribe(wav_path):
     segs, info = model().transcribe(
         pcm, language=None if lang == "auto" else lang, task="transcribe", word_timestamps=True, beam_size=5,
         vad_filter=True, vad_parameters={"min_silence_duration_ms": 400, "speech_pad_ms": 200},
-        condition_on_previous_text=False, initial_prompt=c.get("initial_prompt") or None,
+        condition_on_previous_text=False, initial_prompt=_prompt(c),
         no_speech_threshold=0.6, compression_ratio_threshold=2.4)
     words, sents = [], []
     total = float(getattr(info, "duration", 0) or len(pcm) / 16000) or 1.0
@@ -168,7 +174,7 @@ def keep_word(t, p):
         return True
     if p < 0.02:
         return False
-    return not _FOREIGN.search(t) or t.lower() in ("bro", "ok", "okay", "wow", "gta", "jason", "lucia", "show", "like")
+    return not _FOREIGN.search(t) or t.lower() in ("bro", "ok", "okay", "wow", "show", "like")
 
 
 def merge_clitics(words):

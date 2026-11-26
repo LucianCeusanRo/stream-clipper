@@ -88,10 +88,10 @@ def fake_transcribe(_wav):
 def seed_accounts_and_history():
     """Example accounts + queue + posted rows (demo data only: URLs point to nothing real)."""
     accounts.save_all([
-        {"id": "alex-clips", "name": "@alex.clips (demo)", "platform": "tiktok", "hashtags": ["#gta6", "#gaming"]},
+        {"id": "alex-clips", "name": "@alex.clips (demo)", "platform": "tiktok", "hashtags": ["#gaming", "#clips"]},
         {"id": "alex-funny", "name": "@alex.funny (demo)", "platform": "tiktok", "hashtags": ["#funny", "#fyp"],
          "daily_cap": 8, "interval_min": 45, "interval_max": 90},
-        {"id": "alex-shorts", "name": "Alex Shorts (demo)", "platform": "youtube", "hashtags": ["#shorts", "#gta6"]},
+        {"id": "alex-shorts", "name": "Alex Shorts (demo)", "platform": "youtube", "hashtags": ["#shorts", "#gaming"]},
     ])
     accounts.profile_dir(accounts.get("alex-clips")).mkdir(parents=True, exist_ok=True)   # shows as "logged in"
     t0 = time.time() + 180
@@ -119,9 +119,9 @@ def seed_accounts_and_history():
 
 def main():
     util.setup_logging()
-    util.save_settings({"language": LANG, "ui_language": LANG, "streamer_name": "Alex", "game": "GTA 6",
+    util.save_settings({"language": LANG, "ui_language": LANG, "streamer_name": "Alex", "game": "Counter-Strike 2",
                         "credit_text": "@alex on YouTube (demo)" if LANG != "ro" else "@alex pe YouTube (demo)",
-                        "hashtags": ["#gta6", "#clip"], "use_llm": False, "auto_cam": False, "layout": "split",
+                        "hashtags": ["#clip"], "use_llm": False, "auto_cam": False, "layout": "split",
                         "cam_box": [0.0, 0.118, 0.238, 0.238],
                         "onboarded": os.environ.get("DEMO_WIZARD", "0") != "1"})
     pipeline.transcribe = fake_transcribe
