@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/banner.png" alt="Stream Clipper: long livestreams in, short vertical clips out" width="100%"></p>
+<p align="center"><img src="assets/banner.png" alt="Stream Clipper: GTA 6 streams in, Shorts and TikToks out" width="100%"></p>
 
 <p align="center">
 <a href="https://github.com/LucianCeusanRo/stream-clipper/actions/workflows/ci.yml"><img src="https://github.com/LucianCeusanRo/stream-clipper/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-<b>Turns long livestreams into short vertical clips with word-by-word captions.</b><br>
-Any streamer, any language Whisper understands. Gaming, IRL, podcasts. GTA 6 streams are the reason I built it.<br>
+<b>Clip GTA 6 streams into Shorts and TikToks automatically, with word-by-word captions.</b><br>
+Built for GTA 6, but it works for any streamer, game or language.<br>
 <a href="https://lucianceusanro.github.io/stream-clipper/">Website</a> ·
 <a href="#quick-start">Quick start</a> ·
 <a href="https://github.com/LucianCeusanRo/stream-clipper/releases/latest">Download</a> ·

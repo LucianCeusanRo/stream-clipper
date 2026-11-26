@@ -3,7 +3,7 @@
 import socket, sys, threading, time, urllib.request, webbrowser
 from .util import cfg, log, setup_logging
 
-TITLE = "Stream Clipper"
+TITLE = "Stream Clipper · GTA 6 clips"
 
 
 def _running(port):
@@ -34,9 +34,9 @@ img{width:96px;height:96px;border-radius:22px;box-shadow:0 12px 40px rgba(255,45
 h1{margin:0;font-size:26px;letter-spacing:.3px}h1 b{color:#ff2d55}
 .bar{width:320px;height:8px;background:#252b36;border-radius:6px;overflow:hidden}
 .bar i{display:block;height:100%;width:3%;background:linear-gradient(90deg,#25f4ee,#ff2d55);transition:width .4s}
-#m{color:#8b95a7;min-height:20px}small{color:#5d6678}
+#m{color:#8b95a7;min-height:20px}#t{color:#25f4ee;margin-top:-8px}small{color:#5d6678}
 </style></head><body><div class="w"><img src="data:image/png;base64,__ICON__" alt="">
-<h1>Stream <b>Clipper</b></h1><div class="bar"><i id="b"></i></div><div id="m">Starting…</div><small>v__VER__</small></div>
+<h1>Stream <b>Clipper</b></h1><div id="t">GTA 6 streams → Shorts &amp; TikToks</div><div class="bar"><i id="b"></i></div><div id="m">Starting…</div><small>v__VER__</small></div>
 <script>function set(m,p){document.getElementById('m').textContent=m;if(p!=null)document.getElementById('b').style.width=Math.max(3,p)+'%'}</script>
 </body></html>"""
 

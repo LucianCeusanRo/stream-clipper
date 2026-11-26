@@ -1,6 +1,6 @@
 # Stream Clipper (română)
 
-Face din live-uri lungi clipuri verticale scurte, cu subtitrare cuvânt-cu-cuvânt. Merge pentru orice streamer și orice limbă pe care o știe Whisper (gaming, IRL, podcast); l-am făcut pentru live-urile de GTA 6.
+Taie automat live-urile de GTA 6 în Shorts și TikTok-uri, cu subtitrare cuvânt-cu-cuvânt. Făcut pentru GTA 6, dar merge pentru orice streamer, joc sau limbă.
 Aplicație Windows, rulează pe PC-ul tău, gratuită și open source (MIT). [English README](README.md) · [💬 Dezbatere: clipurile cu streameri sunt promovare gratuită sau luare din munca lor?](https://github.com/LucianCeusanRo/stream-clipper/discussions/1)
 
 > **Unealtă neoficială de fan, fără legătură cu Rockstar Games sau Take-Two.** Repo-ul nu conține imagini din joc, logo-uri sau mărci.

@@ -6,6 +6,10 @@ Used to make the screenshots in docs/. Usage:
 
     python tools/demo.py            # then open http://127.0.0.1:8833
     DEMO_AUTOSUBMIT=0 python tools/demo.py   # empty dashboard; paste the demo video path yourself (used for the demo GIF)
+    DEMO_WIZARD=1 python tools/demo.py       # show the first-run wizard
+
+With auto-submit on, it also adds example accounts (2 TikTok + 1 YouTube Shorts, none really logged in) and
+fake queue/posted history so every page has something to show. Nothing is ever uploaded.
 """
 import os, sys, tempfile, time, wave
 from pathlib import Path
@@ -17,7 +21,7 @@ os.environ.setdefault("CLIPPER_FONTS", str(ROOT / "fonts"))
 sys.path.insert(0, str(ROOT))
 
 import numpy as np  # noqa: E402
-from streamclip import db, jobs, pipeline, util, web  # noqa: E402
+from streamclip import accounts, db, jobs, pipeline, util, web  # noqa: E402
 
 SECS = 240
 PEAKS = [(38, "ras"), (96, "rage"), (158, "wow"), (205, "chat")]
@@ -81,12 +85,45 @@ def fake_transcribe(_wav):
     return words, sents
 
 
+def seed_accounts_and_history():
+    """Example accounts + queue + posted rows (demo data only: URLs point to nothing real)."""
+    accounts.save_all([
+        {"id": "alex-clips", "name": "@alex.clips (demo)", "platform": "tiktok", "hashtags": ["#gta6", "#gaming"]},
+        {"id": "alex-funny", "name": "@alex.funny (demo)", "platform": "tiktok", "hashtags": ["#funny", "#fyp"],
+         "daily_cap": 8, "interval_min": 45, "interval_max": 90},
+        {"id": "alex-shorts", "name": "Alex Shorts (demo)", "platform": "youtube", "hashtags": ["#shorts", "#gta6"]},
+    ])
+    accounts.profile_dir(accounts.get("alex-clips")).mkdir(parents=True, exist_ok=True)   # shows as "logged in"
+    t0 = time.time() + 180
+    while time.time() < t0:
+        rows = db.q("SELECT id FROM clips WHERE status='pending' ORDER BY viral DESC, id")
+        busy = any(j["status"] not in ("gata", "eroare", "done", "error") for j in jobs.list_jobs())
+        if len(rows) >= 4 and not busy:
+            break
+        time.sleep(2)
+    rows = [r["id"] for r in db.q("SELECT id FROM clips WHERE status='pending' ORDER BY viral DESC, id")]
+    if len(rows) < 3:
+        return
+    now = time.time()
+    db.x("UPDATE clips SET status='posted', account='alex-clips', posted_at=?, url=? WHERE id=?",
+         (now - 7200, "https://www.tiktok.com/@alex.clips/video/demo1", rows[0]))
+    yt = db.clone_clip(rows[0], "alex-shorts")
+    db.x("UPDATE clips SET status='posted', posted_at=?, url=? WHERE id=?",
+         (now - 5400, "https://youtube.com/shorts/demo1", yt))
+    db.x("UPDATE clips SET status='posted', account='alex-funny', posted_at=?, url=? WHERE id=?",
+         (now - 2900, "https://www.tiktok.com/@alex.funny/video/demo2", rows[1]))
+    db.x("UPDATE clips SET status='queued', queued_at=?, account='alex-clips' WHERE id=?", (now - 600, rows[2]))
+    db.clone_clip(rows[2], "alex-shorts")
+    print("demo accounts + history added", flush=True)
+
+
 def main():
     util.setup_logging()
     util.save_settings({"language": LANG, "ui_language": LANG, "streamer_name": "Alex", "game": "GTA 6",
                         "credit_text": "@alex on YouTube (demo)" if LANG != "ro" else "@alex pe YouTube (demo)",
                         "hashtags": ["#gta6", "#clip"], "use_llm": False, "auto_cam": False, "layout": "split",
-                        "cam_box": [0.0, 0.118, 0.238, 0.238]})
+                        "cam_box": [0.0, 0.118, 0.238, 0.238],
+                        "onboarded": os.environ.get("DEMO_WIZARD", "0") != "1"})
     pipeline.transcribe = fake_transcribe
     src = HOME / "demo_stream.mp4"
     if not src.exists():
@@ -96,6 +133,7 @@ def main():
     web.serve(port)
     if os.environ.get("DEMO_AUTOSUBMIT", "1") != "0" and not db.q("SELECT id FROM clips LIMIT 1"):
         jobs.submit(str(src), clips=4)
+        seed_accounts_and_history()
     print(f"open http://127.0.0.1:{port}", flush=True)
     while True:
         time.sleep(3600)

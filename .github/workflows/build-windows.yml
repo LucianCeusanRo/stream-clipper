@@ -1,8 +1,12 @@
 name: Build Windows launcher
+# Tag vX.Y.Z (= version.txt) -> builds the launcher exe + installer, runs the tests and publishes a GitHub release
+# with the files the in-app updater needs: StreamClipper-update-vX.Y.Z.zip + SHA256SUMS.txt.
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -22,14 +26,36 @@ jobs:
         run: |
           python -m pip install -r requirements.txt
           python -m streamclip selftest --quick
-      - name: Package
-        shell: pwsh
+      - name: Package update zip + installer
+        shell: bash
         run: |
-          Remove-Item -Recurse -Force .git -ErrorAction SilentlyContinue
-          Compress-Archive -Path * -DestinationPath "Stream-Clipper.zip"
+          set -euo pipefail
+          VER=$(tr -d '\r\n ' < version.txt)
+          echo "VER=$VER" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$VER" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match version.txt ($VER)"; exit 1; fi
+          mkdir -p dist
+          git archive --format=tar --prefix=stream-clipper/ HEAD | tar -x
+          cp "Stream Clipper.exe" stream-clipper/
+          python -m zipfile -c "dist/StreamClipper-update-v$VER.zip" stream-clipper/
+          mv stream-clipper stage
+          ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          if [[ ! -f "$ISCC" ]]; then choco install innosetup -y --no-progress; fi
+          "$ISCC" "//DAppVersion=$VER" installer/StreamClipper.iss
+          cd dist && sha256sum StreamClipper-update-v$VER.zip StreamClipper-Setup-v$VER.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: Stream-Clipper
-          path: |
-            Stream-Clipper.zip
-            Stream Clipper.exe
+          path: dist/*
+      - name: Publish GitHub release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES=.github/release-notes.md
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else   # one step, so "latest" never shows up without the updater files
+            gh release create "$GITHUB_REF_NAME" dist/* --title "Stream Clipper $GITHUB_REF_NAME" --notes-file "$NOTES"
+          fi
