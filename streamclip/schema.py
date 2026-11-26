@@ -18,7 +18,8 @@ NUM = {
     "daily_post_cap": (int, 0, 200, 45), "auto_post_min_viral": (int, 0, 100, 40), "dedupe_similarity": (float, 0.5, 1.0, 0.8),
     "dashboard_port": (int, 1024, 65535, 8777), "delete_after_post_days": (float, 0, 365, 1),
     "keep_raw_chunks_hours": (float, 0, 720, 0), "skipped_retention_days": (float, 0, 365, 7), "disk_budget_gb": (float, 1, 20000, 150),
-    "max_parallel_renders": (int, 1, 4, 1), "rotate_min_gap_minutes": (float, 0, 1440, 30),
+    "max_parallel_renders": (int, 1, 4, 1),
+    "ram_cap_gb": (float, 0, 256, 0), "model_idle_unload_minutes": (float, 0, 1440, 10), "rotate_min_gap_minutes": (float, 0, 1440, 30),
 }
 CHOICE = {
     "whisper_device": ("auto", "cuda", "cpu"),
@@ -27,6 +28,7 @@ CHOICE = {
     "encoder": ("auto", "h264_nvenc", "libx264"), "theme": ("dark", "light"), "visibility": ("public", "private"),
     "layout": ("split", "blur", "fill"), "ui_language": ("en", "ro"), "post_order": ("viral_first", "newest_first"),
     "post_preset": ("sigur", "normal", "agresiv", "personalizat"), "browser_channel": ("chrome", "msedge", "chromium", ""),
+    "memory_mode": ("auto", "low", "normal"),
 }
 BOOL = ("backfill_from_start", "use_llm", "llm_fix_transcript", "auto_cam", "overlay_texts", "censor_swears", "auto_post",
         "headless", "delete_after_post", "auto_update", "check_updates", "start_with_windows", "minimize_to_tray",

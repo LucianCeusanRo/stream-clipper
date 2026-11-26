@@ -4,7 +4,7 @@ or "auto"). The Romanian clean-up below (diacritics, clitics, Latin-only filter)
 Diacritics: Whisper sometimes writes the old cedilla forms (ş ţ) or "ã"; we normalise everything to the
 correct comma-below letters (ș ț) and ă, so the burned captions are proper Romanian.
 """
-import re, threading, wave
+import os, re, threading, time, wave
 import numpy as np
 from . import progress
 from .util import cfg, log, setup_cuda_dlls
@@ -23,14 +23,22 @@ def fix_ro(s):
     return s.translate(DIACRITICS)
 
 
+_last_used = [0.0]
+_force_cpu = [False]           # set after a CUDA/cuDNN error during transcription (e.g. GTX 10xx with cuDNN >= 9.11)
+_CUDA_ERR = ("cudnn", "cublas", "cuda", "cudart")
+
+
 def model():
     global _model
+    from . import memory
     with _lock:
+        _last_used[0] = time.time()
         if _model is None:
             setup_cuda_dlls()
             from faster_whisper import WhisperModel
             c = cfg()
-            dev = c.get("whisper_device", "auto")
+            low = memory.low()
+            dev = "cpu" if _force_cpu[0] else c.get("whisper_device", "auto")
             if dev == "auto":
                 try:
                     import ctranslate2
@@ -38,21 +46,44 @@ def model():
                 except Exception:
                     dev = "cpu"
             ct = c.get("whisper_compute_type", "auto")
-            if ct == "auto":
-                ct = "float16" if dev == "cuda" else "int8"
+            if ct == "auto":                    # int8 weights: ~4x less memory than float32, same words in practice
+                ct = "int8_float16" if dev == "cuda" else "int8"
             name = c.get("whisper_model", "auto") or "auto"
             auto_name = name == "auto"
-            if auto_name:                       # GPU -> best model; CPU only -> "small" (large-v3 is far too slow on CPU)
-                name = "large-v3" if dev == "cuda" else "small"
-            log.info("incarc Whisper %s pe %s (%s)...", name, dev, ct)
+            if auto_name:                       # small = ~0.5 GB RAM in int8; a GPU (normal mode) gets large-v3-turbo
+                name = "large-v3-turbo" if (dev == "cuda" and not low) else ("base" if memory.total_gb() < 8 else "small")
+            threads = max(1, min(4 if low else 8, (os.cpu_count() or 2) - 1))
+            log.info("incarc Whisper %s pe %s (%s)%s...", name, dev, ct, " [low memory]" if low else "")
             try:
-                _model = WhisperModel(name, device=dev, compute_type=ct)
+                _model = WhisperModel(name, device=dev, compute_type=ct, cpu_threads=threads, num_workers=1)
             except Exception as e:
                 if dev != "cuda":
                     raise
                 log.warning("GPU indisponibil pentru Whisper (%s) -> CPU", str(e)[:120])
-                _model = WhisperModel("small" if auto_name else name, device="cpu", compute_type="int8")
+                _model = WhisperModel("small" if auto_name else name, device="cpu", compute_type="int8",
+                                      cpu_threads=threads, num_workers=1)
+            memory.free()                       # the loader's temporary float16 copy goes back to the OS (~-350 MB)
         return _model
+
+
+def idle_for():
+    """Seconds since the model was last used (0 when it isn't loaded or a transcription is running)."""
+    if _model is None or _busy.locked():
+        return 0
+    return time.time() - _last_used[0]
+
+
+def unload(why=""):
+    """Free the Whisper model (it is loaded again on the next chunk)."""
+    global _model
+    if _model is None or _busy.locked():
+        return False
+    with _lock:
+        _model = None
+    from . import memory
+    memory.free()
+    log.info("Whisper eliberat din memorie (%s)", why or "manual")
+    return True
 
 
 def load_wav(path):
@@ -69,16 +100,36 @@ def _prompt(c):
     return None if (not ip or "Vice City" in ip) else ip
 
 
-def transcribe(wav_path):
+def transcribe(wav_path, pcm=None):
     """-> list of words {'w','s','e','p'} (p = probability) and list of segments {'s','e','t'}."""
     if not _busy.acquire(blocking=False):
         progress.stage("transcriere", 0, "aștept placa video (alt job transcrie acum)…")
         _busy.acquire()
     try:
         progress.stage("transcriere", 0, "pornesc Whisper…")
-        return _transcribe(wav_path)
+        try:
+            return _transcribe(wav_path, pcm)
+        except RuntimeError as e:
+            # cuDNN/cuBLAS errors show up only when the GPU runs (not when the model loads): e.g. cuDNN 9.11+
+            # dropped GTX 10xx (Pascal) -> CUDNN_STATUS_EXECUTION_FAILED. Fall back to CPU instead of failing every chunk.
+            if _force_cpu[0] or not any(k in str(e).lower() for k in _CUDA_ERR):
+                raise
+            log.warning("eroare GPU la transcriere (%s) -> continui pe CPU", str(e)[:160])
+            _force_cpu[0] = True
+            global _model
+            with _lock:
+                _model = None
+            return _transcribe(wav_path, pcm)
     finally:
+        _last_used[0] = time.time()
         _busy.release()
+        from . import memory
+        memory.free()                           # inference scratch buffers back to the OS (~-900 MB with "small")
+
+
+def _low():
+    from . import memory
+    return memory.low()
 
 
 def _mmss(t):
@@ -86,15 +137,15 @@ def _mmss(t):
     return f"{t // 60}:{t % 60:02d}"
 
 
-def _transcribe(wav_path):
+def _transcribe(wav_path, pcm=None):
     c = cfg()
-    pcm = load_wav(wav_path)
+    pcm = load_wav(wav_path) if pcm is None else pcm      # reuse the samples the caller already has (one copy in RAM)
     lang = str(c.get("language") or "auto").strip().lower()
     ro = lang == "ro"
     keep = (lambda t: _NON_LATIN.sub("", fix_ro(t)).strip()) if ro else (lambda t: t.strip())
     restore = restore_diacritics if ro else (lambda t: t)
     segs, info = model().transcribe(
-        pcm, language=None if lang == "auto" else lang, task="transcribe", word_timestamps=True, beam_size=5,
+        pcm, language=None if lang == "auto" else lang, task="transcribe", word_timestamps=True, beam_size=2 if _low() else 5,
         vad_filter=True, vad_parameters={"min_silence_duration_ms": 400, "speech_pad_ms": 200},
         condition_on_previous_text=False, initial_prompt=_prompt(c),
         no_speech_threshold=0.6, compression_ratio_threshold=2.4)

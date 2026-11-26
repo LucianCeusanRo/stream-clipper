@@ -78,6 +78,7 @@ def main():
     upd = sub.add_parser("update"); upd.add_argument("--force", action="store_true")
     sub.add_parser("version")
     stp = sub.add_parser("selftest"); stp.add_argument("--quick", action="store_true")
+    sm = sub.add_parser("smoke"); sm.add_argument("--real-whisper", action="store_true")
     a = ap.parse_args()
     if a.cmd == "app":
         from . import desktop; desktop.main()
@@ -103,6 +104,8 @@ def main():
         from . import tiktok
         cap = a.caption or ("Test " + " ".join(cfg()["hashtags"]))
         print(tiktok.upload(Path(a.clip), cap))
+    elif a.cmd == "smoke":
+        from . import selftest; sys.exit(selftest.smoke(real_whisper=a.real_whisper))
     elif a.cmd == "selftest":
         from . import selftest; sys.exit(selftest.main(quick=a.quick))
     elif a.cmd == "update":

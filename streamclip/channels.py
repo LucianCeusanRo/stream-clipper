@@ -190,7 +190,8 @@ class ChannelRecorder(recorder.LiveRecorder):
 
     def _record_h(self, url, hdrs, seg):
         out = self.folder / "live" / "rec_%Y%m%d_%H%M%S.ts"
-        net = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "10", "-rw_timeout", "30000000"]
+        net = ["-fflags", "+genpts+discardcorrupt", "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "10",
+               "-rw_timeout", "30000000"]
         if hdrs:
             net += ["-headers", "".join(f"{k}: {v}\r\n" for k, v in hdrs.items())]
         cmd = [tool("ffmpeg"), "-hide_banner", "-loglevel", "error", *net, "-i", url, "-map", "0:v:0", "-map", "0:a:0?",

@@ -250,7 +250,7 @@ def effects_graph(base, p, fx, ass, layout, n_inputs_before=1):
 def audio_graph(p, fx, sfx_input_idx):
     """Audio: boost on peaks -> meme SFX mixed in -> limiter (no clipping) -> loudness -14 LUFS."""
     from . import effects
-    chain = ["aresample=48000"]
+    chain = ["aresample=48000:async=1:first_pts=0"]     # re-syncs audio after Twitch ad breaks / dropped HLS segments
     vexp = effects.volume_expr(p, float(fx.get("boost_db", 4.0)))
     if vexp:
         chain.append(vexp)

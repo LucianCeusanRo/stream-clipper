@@ -165,6 +165,8 @@ def worker():
             sleep_until(STOP, 5); continue
         if not Path(ch["path"]).exists():
             db.finish_chunk(ch["id"], "error", "fisier lipsa"); continue
+        from . import memory
+        memory.wait_for_room(STOP)                 # ram_cap_gb: free the idle model / let renders finish first
         STATUS["worker"] = f"procesez {ch['video_id']} [{pipeline.hms(ch['t0'])}]"
         t_start = time.time()
         try:
@@ -595,7 +597,8 @@ def run_forever(post=True):
         kill_stale_children()
         threading.Thread(target=worker, daemon=True, name="worker").start()
         threading.Thread(target=janitor_loop, daemon=True, name="janitor").start()
-        from . import channels
+        from . import channels, memory
+        threading.Thread(target=memory.watch, args=(STOP,), daemon=True, name="memory").start()
         threading.Thread(target=channels.loop, args=(STOP, WATCHING), daemon=True, name="channels").start()
         if post:
             threading.Thread(target=poster, daemon=True, name="poster").start()

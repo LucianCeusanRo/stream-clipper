@@ -21,7 +21,8 @@ EDITABLE = {"youtube_client_secret": str, "language": str, "ui_language": str, "
             # General settings (1.2.1): performance, general, onboarding
             "whisper_device": str, "whisper_model": str, "whisper_compute_type": str, "max_parallel_renders": int,
             "encoder": str, "theme": str, "start_with_windows": bool, "minimize_to_tray": bool, "notifications": bool,
-            "onboarded": bool, "rotate": bool, "rotate_accounts": list, "channel_check_every_sec": int}
+            "onboarded": bool, "rotate": bool, "rotate_accounts": list, "channel_check_every_sec": int,
+            "memory_mode": str, "ram_cap_gb": float, "model_idle_unload_minutes": float}
 from . import schema
 CHOICES = {"whisper_device": ("auto", "cuda", "cpu"),
            "whisper_model": ("auto", "large-v3", "large-v3-turbo", "medium", "small", "base", "tiny"),
@@ -30,7 +31,8 @@ CHOICES = {"whisper_device": ("auto", "cuda", "cpu"),
            "layout": ("split", "blur", "fill")}
 SECTIONS = {
     "general": ["ui_language", "theme", "start_with_windows", "minimize_to_tray", "notifications"],
-    "performance": ["whisper_device", "whisper_model", "whisper_compute_type", "max_parallel_renders", "encoder"],
+    "performance": ["whisper_device", "whisper_model", "whisper_compute_type", "max_parallel_renders", "encoder",
+                    "memory_mode", "ram_cap_gb", "model_idle_unload_minutes"],
     "storage": ["delete_after_post", "delete_after_post_days", "keep_raw_chunks_hours", "skipped_retention_days", "disk_budget_gb"],
     "updates": ["auto_update", "check_updates"],
     "clipping": ["language", "channel_url", "streamer_name", "game", "credit_text", "extra_keywords", "min_score",

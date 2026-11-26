@@ -108,6 +108,17 @@ def kick_vod(uuid, timeout=10):
             "http_headers": {"User-Agent": UA, "Referer": "https://kick.com/"}, "timestamp": _ts(ls.get("start_time"))}
 
 
+def kick_vod_from_list(slug, vid, timeout=15):
+    items = _get(f"https://kick.com/api/v2/channels/{slug}/videos", timeout)
+    for it in items if isinstance(items, list) else []:
+        if vid in (str((it.get("video") or {}).get("uuid")), str(it.get("vod_id")), str(it.get("slug"))) and it.get("source"):
+            return {"id": vid, "title": it.get("session_title") or f"Kick video {vid[:8]}", "duration": (it.get("duration") or 0) / 1000,
+                    "url": it["source"], "categories": [c.get("name") for c in it.get("categories") or [] if c.get("name")],
+                    "uploader": slug, "is_live": False, "extractor": "kick:api",
+                    "http_headers": {"User-Agent": UA, "Referer": "https://kick.com/"}, "timestamp": _ts(it.get("start_time"))}
+    raise PlatformError("not found (wrong link, or the video was deleted)")
+
+
 def kick_info(url):
     """Info dict for a kick.com link (VOD or live channel), or None if the link isn't Kick."""
     u = urlparse(url)
@@ -116,7 +127,14 @@ def kick_info(url):
     path = [p for p in u.path.split("/") if p]
     m = re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", path[-1] if path else "")
     if m and "videos" in path:
-        return kick_vod(path[-1])
+        try:
+            return kick_vod(path[-1])
+        except PlatformError as e:
+            # Kick's newer video ids are not served by /api/v1/video (yt-dlp issue #17284): look the video up in
+            # the channel's public video list instead, which carries the playable HLS source
+            if "not found" not in str(e) or path[0] == "videos":
+                raise
+            return kick_vod_from_list(path[0].lower(), path[-1])
     if path and NAME_RX.match(path[0]) and len(path) == 1:
         ch = kick_channel(path[0].lower())
         if not ch["live"]:

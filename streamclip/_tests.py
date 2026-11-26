@@ -1655,5 +1655,43 @@ class T27Rotation(unittest.TestCase):
         self.assertTrue(any((Path(util.DATA) / "exports" / "fb").glob("*.txt")))
 
 
+class T28Memory(unittest.TestCase):
+    def tearDown(self):
+        transcribe._model = None; transcribe._force_cpu[0] = False
+        util.save_settings({"memory_mode": "auto", "ram_cap_gb": 0})
+
+    def test_low_mode_and_idle_unload(self):
+        from streamclip import memory
+        util.save_settings({"memory_mode": "low"}); self.assertTrue(memory.low())
+        util.save_settings({"memory_mode": "normal"}); self.assertFalse(memory.low())
+        util.save_settings({"memory_mode": "auto", "ram_cap_gb": 4}); self.assertTrue(memory.low())   # a small cap implies low
+        transcribe._model = object(); transcribe._last_used[0] = time.time() - 3600
+        self.assertGreater(transcribe.idle_for(), 3000)
+        self.assertTrue(transcribe.unload("test")); self.assertIsNone(transcribe._model)
+        self.assertFalse(transcribe.unload("again"))
+        self.assertGreater(memory.rss_gb(), 0)
+
+    def test_gpu_error_falls_back_to_cpu(self):
+        calls = []
+        orig = transcribe._transcribe
+        def fake(wav, pcm=None):
+            calls.append(transcribe._force_cpu[0])
+            if not transcribe._force_cpu[0]:
+                raise RuntimeError("cuDNN failed with status CUDNN_STATUS_EXECUTION_FAILED")
+            return [{"w": "ok", "s": 0, "e": 1, "p": 1}], []
+        transcribe._transcribe = fake
+        try:
+            words, _ = transcribe.transcribe("x.wav")
+        finally:
+            transcribe._transcribe = orig
+        self.assertEqual(calls, [False, True]); self.assertEqual(words[0]["w"], "ok")
+        transcribe._transcribe = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("some other bug"))
+        try:
+            with self.assertRaises(RuntimeError):
+                transcribe.transcribe("x.wav")
+        finally:
+            transcribe._transcribe = orig
+
+
 if __name__ == "__main__":
     unittest.main()

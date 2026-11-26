@@ -51,7 +51,7 @@ def detect(refresh=False):
             nvenc = False
         vram = (smi or {}).get("vram_gb") or 0
         if cuda and vram >= 6:
-            rec = {"whisper_device": "cuda", "whisper_model": "large-v3", "whisper_compute_type": "float16"}
+            rec = {"whisper_device": "cuda", "whisper_model": "large-v3-turbo", "whisper_compute_type": "int8_float16"}
         elif cuda:
             rec = {"whisper_device": "cuda", "whisper_model": "medium", "whisper_compute_type": "int8_float16"}
         else:

@@ -159,7 +159,13 @@ def protected(rel: Path):
 
 
 def _sha(p: Path):
-    return hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
+    if not p.exists():
+        return None
+    h = hashlib.sha256()
+    with open(p, "rb") as f:                     # in 1 MB blocks, never the whole file in memory
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
 
 
 MAX_ZIP = 120 * 1024 * 1024

@@ -1,7 +1,6 @@
 name: CI
 on:
   push:
-    branches: [main]
   pull_request:
 permissions:
   contents: read
@@ -21,3 +20,21 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run tests (no GPU, no network posting)
         run: python -m streamclip selftest --quick
+      - name: Smoke test (full pipeline on a generated sample + every web route, fails on any traceback)
+        run: python -m streamclip smoke
+  smoke-windows:
+    # same smoke test on Windows: paths with spaces / non-ASCII letters, CREATE_NO_WINDOW, ffmpeg.exe
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install ffmpeg
+        run: choco install ffmpeg -y --no-progress
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+      - name: Smoke test
+        run: python -m streamclip smoke

@@ -20,12 +20,14 @@ jobs:
         run: |
           python -m pip install ziglang
           cd launcher
-          python -m ziglang cc -target x86_64-windows-gnu -O2 -s -municode -Wl,--subsystem,windows launcher.c launcher.rc -o "..\Stream Clipper.exe" -lshell32 -luser32
-      - name: Smoke test (install deps CPU-only, run unit tests)
+          python -m ziglang cc -target x86_64-windows-gnu -O2 -s -municode -Wl,--subsystem,windows launcher.c launcher.rc -o "..\Stream Clipper.exe" -lshell32 -luser32 -ladvapi32
+      - name: Tests + smoke test before release (install deps CPU-only, unit tests, full pipeline + web routes)
         shell: cmd
         run: |
+          choco install ffmpeg -y --no-progress
           python -m pip install -r requirements.txt
-          python -m streamclip selftest --quick
+          python -m streamclip selftest --quick || exit /b 1
+          python -m streamclip smoke || exit /b 1
       - name: Package update zip + installer
         shell: bash
         run: |
@@ -44,6 +46,18 @@ jobs:
           "$ISCC" "//DAppVersion=$VER" installer/StreamClipper.iss
           cp "dist/StreamClipper-Setup-v$VER.exe" dist/StreamClipper-Setup.exe     # stable name for the README/website link
           cd dist && sha256sum StreamClipper-update-v$VER.zip StreamClipper-Setup-v$VER.exe StreamClipper-Setup.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Installer test (silent install as admin -> setup steps, elevated scheduled task, imports)
+        shell: pwsh
+        run: |
+          $p = Start-Process "dist\StreamClipper-Setup.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/MERGETASKS=!model,!browser,!desktopicon','/LOG=install.log' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 80; throw "installer exit code $($p.ExitCode)" }
+          schtasks /query /tn "Stream Clipper" /xml | Select-String "HighestAvailable","Stream Clipper.exe"
+          if ($LASTEXITCODE -ne 0) { Get-Content install.log -Tail 80; throw "elevated task missing" }
+          $app = "$env:LOCALAPPDATA\Programs\Stream Clipper"
+          if (!(Test-Path "$app\.venv\Scripts\python.exe")) { Get-Content install.log -Tail 80; throw ".venv missing" }
+          & "$app\.venv\Scripts\python.exe" -c "import streamclip.app, streamclip.channels, streamclip.memory; print('imports ok')"
+          if ($LASTEXITCODE -ne 0) { throw "import failed" }
+          (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem").LongPathsEnabled
       - uses: actions/upload-artifact@v4
         with:
           name: Stream-Clipper

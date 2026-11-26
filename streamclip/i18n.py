@@ -4,6 +4,8 @@ import re
 
 _RULES = [(re.compile(a, re.I), b) for a, b in [
     (r"^astept bucati noi$", "waiting for new chunks"),
+    (r"^toate bucățile descărcate sunt procesate; aștept următoarea$", "all downloaded chunks are processed; waiting for the next one"),
+    (r"^Whisper eliberat din memorie", "Whisper freed from memory"),
     (r"^pauză automată \(TikTok\) până la ", "auto pause (TikTok) until "),
     (r"^pauză postare (\d+)h: ", r"posting paused \1h: "),
     (r"^Auto-postare PORNITĂ \(ON\) \(Setări\)$", "Auto-post ON (Settings)"),

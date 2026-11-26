@@ -132,10 +132,11 @@ def upload(acc, video: Path, caption: str):
             loc = r.headers.get("Location")
         if not loc:
             return False, "YouTube nu a dat adresa de upload", None, "api"
-        put = urllib.request.Request(loc, data=video.read_bytes(), method="PUT",
-                                     headers={"Content-Type": "video/mp4", "Content-Length": str(size)})
-        with urllib.request.urlopen(put, timeout=1800) as r:
-            j = json.loads(r.read() or b"{}")
+        with open(video, "rb") as fh:                       # streamed from disk, not loaded into RAM
+            put = urllib.request.Request(loc, data=fh, method="PUT",
+                                         headers={"Content-Type": "video/mp4", "Content-Length": str(size)})
+            with urllib.request.urlopen(put, timeout=1800) as r:
+                j = json.loads(r.read() or b"{}")
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "replace")[:300]
         if e.code == 403 and "quota" in body.lower():

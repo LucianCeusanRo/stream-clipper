@@ -177,7 +177,8 @@ def process_chunk(chunk, overrides=None):
                 made += 1
             progress.count("made")
 
-        npar = max(1, min(4, int(c.get("max_parallel_renders", 1) or 1)))
+        from . import memory
+        npar = 1 if memory.low() else max(1, min(4, int(c.get("max_parallel_renders", 1) or 1)))   # low memory: one clip at a time
         pool = ThreadPoolExecutor(npar, thread_name_prefix="render") if npar > 1 else None
         futs = []
         progress.update(clip_n=0, clip_m=len(cands))

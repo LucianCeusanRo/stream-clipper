@@ -43,6 +43,8 @@ def submit(source, start=None, end=None, clips=5):
     if s is not None and e is not None and e - s < 30:
         raise ValueError("intervalul trebuie să aibă cel puțin 30 de secunde")
     n = max(1, min(50, int(clips or 5)))
+    if sum(1 for j in JOBS.values() if j["status"] in ("in asteptare", "ruleaza")) >= 10:
+        raise ValueError("10 links are already waiting: let them finish first")      # bounded queue
     jid = uuid.uuid4().hex[:8]
     JOBS[jid] = {"id": jid, "source": source, "start": s, "end": e, "clips": n, "status": "in asteptare",
                  "progress": 0, "stage": "în așteptare", "made": 0, "error": None, "created": time.time()}
@@ -147,7 +149,8 @@ def _fetch(j, folder):
         if info.get("extractor") == "kick:api":
             url = platforms.hls_variant(url, max_h, hdrs)
         # Twitch / Kick / YouTube HLS: same headers as yt-dlp, and reconnect if the connection drops while recording
-        pre = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5", "-rw_timeout", "30000000"]
+        pre = ["-fflags", "+genpts+discardcorrupt", "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+               "-rw_timeout", "30000000"]
         if hdrs:
             pre += ["-headers", "".join(f"{k}: {v}\r\n" for k, v in hdrs.items())]
         run([tool("ffmpeg"), "-y", "-v", "error", *pre, "-i", url, "-t", f"{secs}", "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
