@@ -86,7 +86,7 @@ procedure CreateElevatedTask();
 var
   X, P: TArrayOfString;
   F, L, S1, Exe: String;
-  Out: AnsiString;
+  Msg: AnsiString;
   R: Integer;
   Ok: Boolean;
 begin
@@ -113,7 +113,7 @@ begin
       Ok := True
     else
     begin
-      if LoadStringFromFile(L, Out) then Log('schtasks /xml said: ' + String(Out));
+      if LoadStringFromFile(L, Msg) then Log('schtasks /xml said: ' + String(Msg));
       Log('schtasks /create /xml failed (' + IntToStr(R) + '), trying Register-ScheduledTask');
     end;
     DeleteFile(F);
@@ -135,7 +135,7 @@ begin
         Ok := True
       else
       begin
-        if LoadStringFromFile(L, Out) then Log('Register-ScheduledTask said: ' + String(Out));
+        if LoadStringFromFile(L, Msg) then Log('Register-ScheduledTask said: ' + String(Msg));
         Log('elevated task not created (' + IntToStr(R) + '): the launcher falls back to a normal UAC prompt');
       end;
       DeleteFile(S1);

@@ -1,4 +1,4 @@
-**Stream Clipper v1.3.2: clip Kick, Twitch and YouTube streams into Shorts and TikToks.** Any streamer, game or language.
+**Stream Clipper v1.3.3: clip Kick, Twitch and YouTube streams into Shorts and TikToks.** Any streamer, game or language.
 
 **⬇ Windows: download `StreamClipper-Setup.exe` and run it. Say Yes to the administrator prompt, then Next → Next → Install.**
 
