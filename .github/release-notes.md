@@ -1,4 +1,4 @@
-**Stream Clipper v1.4.0: stream card, multistream for your own live, native Twitch clips.**
+**Stream Clipper v1.4.1: stream card, multistream for your own live, native Twitch clips.**
 
 **⬇ Windows: download `StreamClipper-Setup.exe` and run it** (say Yes to the administrator prompt). If you already have it installed, the app updates itself.
 

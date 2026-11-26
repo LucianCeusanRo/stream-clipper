@@ -1300,7 +1300,10 @@ class T22Accounts(unittest.TestCase):
             self.assertTrue(ok, msg); self.assertEqual(mode, "api"); self.assertEqual(url, "https://youtube.com/shorts/abc123")
             self.assertTrue(seen["refresh"]); self.assertEqual(seen["auth"], "Bearer a2"); self.assertEqual(seen["bytes"], 1234)
             self.assertIn("#Shorts", seen["meta"]["snippet"]["title"])
-            self.assertEqual(util.load_json(tf, {})["access_token"], "a2")
+            from streamclip import secretstore
+            self.assertEqual(secretstore.load_json(tf, {})["access_token"], "a2")     # token file is encrypted on Windows
+            if os.name == "nt":
+                self.assertNotIn("a2", tf.read_text())
             u = youtube_upload.auth_url("yt", 8777)
             self.assertIn("youtube.upload", urllib.parse.unquote(u)); self.assertIn("127.0.0.1%3A8777", u)
             accounts.clear_token(acc)

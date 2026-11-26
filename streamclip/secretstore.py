@@ -47,14 +47,15 @@ def keyring_mod():
 def save_json(path: Path, obj):
     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
     raw = json.dumps(obj).encode("utf-8")
-    if os.name == "nt":
-        path.write_text("dpapi:" + base64.b64encode(dpapi(raw, True)).decode(), encoding="ascii")
-    else:
-        path.write_bytes(raw)
+    data = ("dpapi:" + base64.b64encode(dpapi(raw, True)).decode()).encode() if os.name == "nt" else raw
+    tmp = path.with_name(path.name + f".tmp{os.getpid()}")
+    tmp.write_bytes(data)
+    if os.name != "nt":
         try:
-            os.chmod(path, 0o600)
+            os.chmod(tmp, 0o600)
         except OSError:
             pass
+    os.replace(tmp, path)                        # atomic: a crash never leaves a half-written token
 
 
 def load_json(path: Path, default=None):
