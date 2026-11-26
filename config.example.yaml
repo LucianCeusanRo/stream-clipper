@@ -17,6 +17,7 @@ game: ""                          # optional default game; the real game is dete
                                   # and used in titles/hashtags only, never on the video. Empty + unknown game = neutral #gaming #clips
 extra_urls: []                    # extra lives/VODs to process at start-up (optional)
 check_live_every_sec: 60          # how often to check whether a new live started
+channel_check_every_sec: 90       # Kick/Twitch channels under Channels: how often each one is checked (30-3600)
 backfill_from_start: true         # also process what was already streamed before the app noticed the live
 backfill_max_hours: 12            # how far back (YouTube keeps ~12 h of DVR at most)
 process_recent_vods: 0            # how many recent finished streams to process at start-up
@@ -38,9 +39,9 @@ whisper_compute_type: "auto"      # auto -> float16 on GPU, int8 on CPU
 initial_prompt: "live stream, chat."   # names/words Whisper should know (add the streamer's name)
 
 # --- MOMENT SELECTION ------------------------------------------
-clip_min_sec: 20
-clip_max_sec: 60
-clip_target_sec: 35
+clip_min_sec: 15
+clip_max_sec: 45
+clip_target_sec: 30
 clips_per_chunk_max: 3            # max moments per 5 minutes of stream
 min_score: 0.9                    # threshold (lower = more clips)
 min_gap_between_clips_sec: 20     # clips don't overlap
@@ -67,7 +68,7 @@ auto_post: false                  # false = you press "Post" on every clip; true
 manual_min_gap_minutes: 3         # minimum gap between two clips you approved
 required_hashtag: ""              # optional, e.g. required by a clipping campaign; always the FIRST hashtag
 hashtags: []                      # always added (the game's own hashtag, e.g. #CS2, is added automatically; unknown game = #gaming #clips)
-extra_hashtags: ["#fyp", "#viral", "#gaming", "#funny", "#streamer"]   # a few are picked at random for variety
+extra_hashtags: ["#gaming", "#clips", "#streamer"]   # a few are picked at random for variety
 hashtags_max: 5                   # total hashtags per clip (including required_hashtag)
 recut_sources_max_gb: 15          # disk space for the sources used by "Re-cut" (oldest are deleted)
 caption_template: "{title} {hashtags}"
@@ -76,6 +77,10 @@ post_interval_max_minutes: 30     # maximum gap (random between min and max)
 post_jitter_minutes: 4            # +/- a few random minutes so posts do not look scheduled
 post_preset: "normal"             # safe (20/day, 40-60 min) / normal (45/day, 20-30 min) / aggressive (60/day, 15-20 min)
 daily_post_cap: 45                # max posts per day (higher = more risk of being limited by TikTok)
+rotate: true                      # clips without a chosen account take turns over the accounts (round-robin, each account's
+                                  # own daily cap + minutes between posts respected, never the same clip twice on one account).
+                                  # false = they all go to the first enabled account
+rotate_accounts: []               # account ids that take part in the rotation; empty = every enabled account marked "rotation"
 quiet_hours: []                   # e.g. [3, 4, 5, 6] = no automatic posts between 03:00 and 06:59
 post_order: "viral_first"         # viral_first = highest viral chance first; newest_first = newest first
 auto_post_min_viral: 40           # auto-post only posts clips with viral chance >= 40% (clips you approve with Post always go)

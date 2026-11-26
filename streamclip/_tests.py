@@ -1423,5 +1423,237 @@ class T24ParallelRender(unittest.TestCase):
         db.x("UPDATE clips SET status='skipped' WHERE video_id='parvid'")
 
 
+class _Web:
+    port_base = 15000
+    req = T7Web.req
+
+    @classmethod
+    def setUpClass(cls):
+        cls.port = cls.port_base + os.getpid() % 1000
+        cls.srv = web.serve(cls.port)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown(); cls.srv.server_close()
+
+
+class T25Channels(_Web, unittest.TestCase):
+    """Kick/Twitch auto-watch with mocked platform APIs (no network)."""
+    def setUp(self):
+        from streamclip import channels
+        self.ch = channels
+        channels.FILE.unlink(missing_ok=True); channels.STATE.clear(); channels.ACTIVE.clear()
+
+    def test_parse_channel_inputs(self):
+        from streamclip import platforms as p
+        self.assertEqual(p.parse_channel("https://kick.com/Some_Guy"), ("kick", "some_guy"))
+        self.assertEqual(p.parse_channel("www.twitch.tv/shroud/videos"), ("twitch", "shroud"))
+        self.assertEqual(p.parse_channel("kick:gs-xx"), ("kick", "gs-xx"))
+        for bad in ("", "https://youtube.com/@x", "kick.com/", "kick.com/videos", "twitch.tv/a b"):
+            with self.assertRaises(p.PlatformError):
+                p.parse_channel(bad)
+
+    def test_add_persist_toggle_remove(self):
+        self.ch.add("kick.com/friend")
+        with self.assertRaises(ValueError):
+            self.ch.add("https://kick.com/FRIEND")                    # no duplicates
+        self.ch.add("twitch.tv/other")
+        self.assertEqual([c["key"] for c in self.ch.listing()], ["kick:friend", "twitch:other"])
+        self.ch.set_enabled("twitch:other", False)
+        self.assertEqual(self.ch.listing()[1]["status"], "off")
+        self.assertFalse(self.ch.load()[1]["enabled"])                  # persisted in channels.json
+        self.ch.remove("kick:friend")
+        self.assertEqual([c["name"] for c in self.ch.load()], ["other"])
+
+    def test_poll_records_when_live_and_stops_when_offline(self):
+        from streamclip import platforms
+        self.ch.add("kick.com/friend")
+        live = {"v": False}
+        started = []
+
+        class FakeRec:
+            def __init__(self): self.stop, self.ended = threading.Event(), threading.Event()
+
+        def status(plat, name):
+            return {"live": live["v"], "title": "ranked grind", "game": "The Finals", "started": 1000.0, "stream_id": "77"}
+
+        def start(c, s, vid):
+            started.append(vid); return FakeRec()
+        t = 10_000.0
+        self.ch.poll_once(t, status, start)
+        self.assertEqual(self.ch.listing()[0]["status"], "offline"); self.assertEqual(started, [])
+        live["v"] = True; t += 100
+        self.ch.poll_once(t, status, start)
+        self.assertEqual(started, ["kick-friend-77"]); self.assertEqual(self.ch.listing()[0]["status"], "recording")
+        self.ch.poll_once(t + 1, status, start)                        # not due yet -> no second recorder
+        t += 100; self.ch.poll_once(t, status, start)
+        self.assertEqual(len(started), 1)
+        rec = self.ch.ACTIVE["kick:friend"]
+        live["v"] = False; t += 100
+        self.ch.poll_once(t, status, start)
+        self.assertTrue(rec.stop.is_set())                             # offline -> recorder told to stop
+        rec.ended.set(); t += 100
+        self.ch.poll_once(t, status, start)
+        self.assertNotIn("kick:friend", self.ch.ACTIVE); self.assertEqual(self.ch.listing()[0]["status"], "offline")
+
+    def test_errors_back_off_quietly(self):
+        from streamclip import platforms
+        self.ch.add("twitch.tv/flaky")
+        calls = []
+
+        def status(plat, name):
+            calls.append(1); raise platforms.PlatformError("rate limited", retry_after=600)
+        t = 50_000.0
+        self.ch.poll_once(t, status, None)
+        st = self.ch.STATE["twitch:flaky"]
+        self.assertEqual(st["fails"], 1); self.assertGreaterEqual(st["next_check"] - t, 600)
+        for k in range(1, 60):                                         # polled every 5 s for 5 minutes: no new requests
+            self.ch.poll_once(t + 5 * k, status, None)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.ch.listing()[0]["status"], "error")
+
+    def test_kick_vod_info_from_api(self):
+        from streamclip import platforms
+        class R:
+            status_code = 200; headers = {}
+            def json(self):
+                return {"source": "https://stream.kick.com/x/master.m3u8",
+                        "livestream": {"session_title": "finals", "duration": 600000, "categories": [{"name": "The Finals"}],
+                                       "channel": {"slug": "friend"}, "start_time": "2026-11-21 02:28:38"}}
+        orig = platforms.requests.get
+        platforms.requests.get = lambda *a, **k: R()
+        try:
+            i = platforms.kick_info("https://kick.com/friend/videos/07960019-243c-4677-b0de-be9814e1b6b0")
+        finally:
+            platforms.requests.get = orig
+        self.assertEqual((i["title"], i["duration"], i["categories"]), ("finals", 600.0, ["The Finals"]))
+        self.assertIsNone(platforms.kick_info("https://www.youtube.com/watch?v=x"))
+        self.assertIn("wasn't found", platforms.friendly(Exception("ERROR: [kick:vod] abc: NOT_FOUND: Requested resource not found")))
+
+    def test_channels_api(self):
+        code, r = self.req("/api/channels", {"action": "add", "channel": "youtube.com/x"})
+        self.assertEqual(code, 400); self.assertIn("Kick or Twitch", r["error"])
+        code, r = self.req("/api/channels", {"action": "add", "channel": "kick.com/friend"})
+        self.assertEqual(code, 200)
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/channels", timeout=5) as resp:
+            self.assertEqual(json.loads(resp.read())["channels"][0]["name"], "friend")
+
+
+class T26SettingsSchema(_Web, unittest.TestCase):
+    port_base = 14000
+
+    def test_bad_hand_edits_fall_back_to_defaults(self):
+        from streamclip import schema
+        c = schema.sanitize({"chunk_minutes": "five", "daily_post_cap": -3, "whisper_device": "tpu", "auto_post": "no",
+                             "hashtags": "#a #b", "clip_min_sec": 50, "clip_max_sec": 20, "post_interval_min_minutes": 40,
+                             "post_interval_max_minutes": 10})
+        self.assertEqual(c["chunk_minutes"], 5); self.assertEqual(c["daily_post_cap"], 45); self.assertEqual(c["whisper_device"], "auto")
+        self.assertIs(c["auto_post"], False); self.assertEqual(c["hashtags"], ["#a", "#b"])
+        self.assertLess(c["clip_min_sec"], c["clip_max_sec"]); self.assertEqual(c["post_interval_max_minutes"], 40)
+
+    def test_every_example_key_is_known_and_valid(self):
+        import yaml
+        from streamclip import schema
+        ex = yaml.safe_load((Path(__file__).resolve().parent.parent / "config.example.yaml").read_text(encoding="utf-8"))
+        known = set(schema.NUM) | set(schema.CHOICE) | set(schema.BOOL) | set(schema.LIST) | {
+            "language", "channel_url", "streamer_name", "game", "live_title_filter", "youtube_cookies_from_browser",
+            "youtube_cookies_file", "initial_prompt", "caption_font", "credit_text", "required_hashtag", "caption_template",
+            "effects", "youtube_client_secret"}
+        self.assertEqual(sorted(set(ex) - known), [])
+        for k, v in ex.items():
+            if k in schema.NUM or k in schema.CHOICE:
+                self.assertEqual(schema.check(k, v), v, k)              # the shipped defaults are inside their ranges
+        for k in web.EDITABLE:
+            self.assertIn(k, ex, f"{k} is editable in the app but not documented in config.example.yaml")
+
+    def test_settings_api_rejects_garbage(self):
+        code, r = self.req("/api/settings", {"daily_post_cap": "lots"}); self.assertEqual(code, 400)
+        self.assertIn("daily_post_cap", r["error"])
+        code, _ = self.req("/api/settings", {"chunk_minutes": 5}); self.assertEqual(code, 200)   # not editable: ignored
+
+
+class T27Rotation(unittest.TestCase):
+    def setUp(self):
+        self.calls = []
+        def fake_upload(path, caption, visibility=None, acc=None):
+            self.calls.append(acc["id"]); return True, "postat", None
+        self._orig = tiktok.upload; tiktok.upload = fake_upload
+        db.x("UPDATE clips SET status='skipped' WHERE status IN ('queued','pending','failed','posted','exported')")
+        accounts.save_all([{"id": "main", "name": "Main", "platform": "tiktok", "legacy_profile": True, "daily_cap": 3, "interval_min": 30},
+                           {"id": "alt", "name": "Alt", "platform": "tiktok", "daily_cap": 1, "interval_min": 30},
+                           {"id": "fb", "name": "FB page", "platform": "facebook", "daily_cap": 2, "interval_min": 60}])
+        util.save_settings({"rotate": True, "rotate_accounts": [], "auto_post": False, "daily_post_cap": 45, "quiet_hours": []})
+
+    def tearDown(self):
+        tiktok.upload = self._orig
+        db.x("UPDATE clips SET status='skipped' WHERE status IN ('queued','pending','failed','posted','exported')")
+        accounts.save_all([{"id": "main", "name": "TikTok", "platform": "tiktok", "legacy_profile": True}])
+
+    def _clip(self, n, account=None, status="queued"):
+        f = Path(util.DATA) / f"rot{n}_{time.time_ns()}.mp4"; f.write_bytes(b"x")
+        return db.add_clip(video_id="vidRot", start=100.0 * n, end=100.0 * n + 30, score=5, file=str(f), title=f"clip {n}",
+                           caption=f"moment {n} #gaming", status=status, queued_at=time.time() + n, account=account)
+
+    def test_round_robin_respects_caps_and_spacing(self):
+        stats = {}
+        picks = [accounts.rotation_pick({k: v["today"] for k, v in stats.items()}, {}) for _ in range(1)]
+        self.assertIn(picks[0], ("main", "alt", "fb"))
+        stats = {"main": {"today": 1, "last": time.time()}, "alt": {"today": 0, "last": 0}, "fb": {"today": 0, "last": 0}}
+        ready = lambda a: app.account_ready(a, stats)[0]
+        first = accounts.rotation_pick({k: v["today"] for k, v in stats.items()}, {k: v["last"] for k, v in stats.items()}, ready=ready)
+        self.assertIn(first, ("alt", "fb"))                             # main posted and is inside its 30 min gap
+        stats["alt"] = {"today": 1, "last": time.time()}                # alt hit its cap of 1
+        self.assertEqual(accounts.rotation_pick({k: v["today"] for k, v in stats.items()}, {k: v["last"] for k, v in stats.items()}, ready=ready), "fb")
+        self.assertEqual(accounts.rotation_pick({}, {}, rotate=False), "main")      # rotate off -> first enabled
+
+    def test_schedule_spreads_and_never_duplicates(self):
+        ids = [self._clip(i) for i in range(6)]
+        sc = app.plan_schedule(n=10, now=1_900_000_000)
+        items = sc["items"]
+        self.assertEqual(len(items), 6)
+        per = {}
+        for i in items:
+            per.setdefault(i["account_id"], []).append(i["at"])
+        self.assertLessEqual(len(per.get("alt", [])), 1); self.assertLessEqual(len(per.get("fb", [])), 2)
+        self.assertGreaterEqual(len(per), 3)                            # spread over all three accounts
+        for acc, ts in per.items():
+            gap = {"main": 30, "alt": 30, "fb": 60}[acc] * 60
+            self.assertTrue(all(b - a >= gap - 1 for a, b in zip(ts, ts[1:])), acc)
+        self.assertTrue(all(i["export"] for i in items if i["platform"] == "facebook"))
+        self.assertEqual(len({i["id"] for i in items}), 6)
+
+    def test_review_first_and_auto_off(self):
+        self._clip(1, status="pending")                                  # not approved, auto-post OFF
+        self.assertEqual(app.plan_schedule(now=1_900_000_000)["items"], [])
+        util.save_settings({"auto_post": True, "auto_post_min_viral": 0})
+        try:
+            self.assertEqual(len(app.plan_schedule(now=1_900_000_000)["items"]), 1)
+        finally:
+            util.save_settings({"auto_post": False, "auto_post_min_viral": 40})
+
+    def test_same_clip_never_twice_on_one_account(self):
+        cid = self._clip(1, account="main")
+        db.x("UPDATE clips SET status='posted', posted_at=? WHERE id=?", (time.time(), cid))
+        with self.assertRaises(ValueError):
+            db.clone_clip(cid, "main")
+        c2 = db.clone_clip(cid, "alt")
+        with self.assertRaises(ValueError):
+            db.clone_clip(cid, "alt")                                   # already queued there
+        r = db.q("SELECT * FROM clips WHERE id=?", (c2,), one=True)
+        self.assertEqual(db.accounts_with(r), {"main"})
+        # an unassigned copy of the same cut never rotates onto main or alt
+        db.x("UPDATE clips SET account=NULL WHERE id=?", (c2,))
+        r = db.q("SELECT * FROM clips WHERE id=?", (c2,), one=True)
+        acc = app.target_account(r, {})
+        self.assertNotEqual(acc["id"], "main")                          # main already has this exact clip
+
+    def test_facebook_is_export_only(self):
+        cid = self._clip(1, account="fb")
+        self.assertTrue(app.post_one(db.q("SELECT * FROM clips WHERE id=?", (cid,), one=True)))
+        r = db.q("SELECT * FROM clips WHERE id=?", (cid,), one=True)
+        self.assertEqual(r["status"], "exported"); self.assertEqual(self.calls, [])
+        self.assertTrue(any((Path(util.DATA) / "exports" / "fb").glob("*.txt")))
+
+
 if __name__ == "__main__":
     unittest.main()

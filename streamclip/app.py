@@ -276,12 +276,92 @@ def account_ready(acc, stats, now=None):
     return True, ""
 
 
-def target_account(clip, stats):
-    """The account chosen for the clip, else the default rotation (enabled account that posted least today)."""
+def target_account(clip, stats, now=None):
+    """The account chosen for the clip, else the rotation (see accounts.rotation_pick): an account that can post
+    now and doesn't have this clip yet."""
     acc_id = _get(clip, "account")
     if not acc_id:
-        acc_id = accounts.rotation_pick({k: v["today"] for k, v in stats.items()}, {k: v["last"] for k, v in stats.items()})
+        try:
+            have = db.accounts_with(clip)
+        except Exception:
+            have = set()
+        acc_id = accounts.rotation_pick({k: v["today"] for k, v in stats.items()}, {k: v["last"] for k, v in stats.items()},
+                                        ready=lambda a: account_ready(a, stats, now)[0], exclude=have)
     return accounts.get(acc_id) if acc_id else None
+
+
+def plan_schedule(n=12, now=None):
+    """Simulated next posts: [{id, hook, account, platform, at, plan}] with every rule the poster uses (account
+    caps + spacing, rotation, global cap + interval, quiet hours, review before posting / auto-post).
+    Estimates only: auto intervals are random in [min, max], so the middle is shown."""
+    c = cfg()
+    now = now or time.time()
+    auto = bool(c.get("auto_post", False))
+    plan, _ = db.post_plan(c.get("post_order", "viral_first"), auto, int(c.get("auto_post_min_viral", 40)), limit=200)
+    stats = {k: dict(v) for k, v in db.account_stats(midnight()).items()}
+    accs = {a["id"]: a for a in accounts.all_accounts()}
+    t = max(now, STATUS.get("next_post_at") or 0)
+    last = db.last_post_time()
+    d0 = datetime.fromtimestamp(now).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    today_total, day_end, cap = db.posts_since(midnight()), d0 + 86400, int(c.get("daily_post_cap", 45))
+    if d0 != midnight():                       # planning from another day (tests): today's counters don't apply
+        today_total = 0
+        for v in stats.values():
+            v["today"] = 0
+    lo_m, hi_m = c.get("post_interval_min_minutes", 20), c.get("post_interval_max_minutes", 30)
+    out, used = [], {}                         # clip key -> accounts it is planned on
+    pending = list(plan)
+    guard = 0
+    while pending and len(out) < n and guard < 2000:
+        guard += 1
+        if today_total >= cap or t >= day_end:   # next day: counters reset
+            t = max(t, day_end); day_end += 86400; today_total = 0
+            for v in stats.values():
+                v["today"] = 0
+        picked = None
+        for clip in pending:
+            gap = (c.get("manual_min_gap_minutes", 3) if clip["plan"] == "manual" else (lo_m + hi_m) / 2) * 60
+            tt = max(t, last + gap) if last else t
+            ck = (clip["video_id"], round(clip["start"], 1), round(clip["end"], 1))
+            have = db.accounts_with(clip) | used.get(ck, set())
+            cands = [accs.get(clip["account"])] if clip.get("account") else accounts.rotation_candidates(have)
+            best = None
+            for acc in cands:                  # the account that can take it soonest (ties: posted least, oldest last)
+                if not acc or not acc["enabled"]:
+                    continue
+                st = stats.get(acc["id"], {"today": 0, "last": 0})
+                if st["today"] >= acc["daily_cap"]:
+                    continue
+                at = max(tt, st["last"] + acc["interval_min"] * 60) if st["last"] else tt
+                key_ = (at, st["today"], st["last"])
+                if best is None or key_ < best[0]:
+                    best = (key_, acc, at)
+            if not best:
+                continue
+            _, acc, tt = best
+            if clip["plan"] != "manual" and (c.get("quiet_hours") or []):
+                for _ in range(24):
+                    if datetime.fromtimestamp(tt).hour not in c["quiet_hours"]:
+                        break
+                    tt = (int(tt // 3600) + 1) * 3600
+            if picked is None or tt < picked[2]:
+                picked = (clip, acc, tt, ck)
+            if clip["plan"] == "manual":
+                break                          # approved clips keep their order
+        if not picked:
+            if all(stats.get(a, {}).get("today", 0) >= accs[a]["daily_cap"] for a in accs if accs[a]["enabled"]):
+                t = day_end; continue        # every account is full today -> tomorrow
+            break
+        clip, acc, tt, ck = picked
+        out.append({"id": clip["id"], "hook": clip.get("hook") or clip.get("title") or "", "account": acc["name"],
+                    "account_id": acc["id"], "platform": acc["platform"], "at": tt, "plan": clip["plan"],
+                    "export": acc["platform"] == "facebook" or accounts.public(acc).get("mode") == "export"})
+        st = stats.setdefault(acc["id"], {"today": 0, "last": 0})
+        st["today"] += 1; st["last"] = tt
+        used.setdefault(ck, set()).add(acc["id"])
+        last, t, today_total = tt, tt, today_total + 1
+        pending.remove(clip)
+    return {"items": out, "auto_post": auto, "rotate": bool(c.get("rotate", True)), "accounts": len([a for a in accs.values() if a["enabled"]])}
 
 
 def post_one(clip):
@@ -310,7 +390,10 @@ def _post_one(clip, c):
     log.info("POSTEZ pe %s (%s): %s | %s", acc["platform"], acc["name"], Path(clip["file"]).name, caption)
     mode = "api"
     try:
-        if acc["platform"] == "youtube":
+        if acc["platform"] == "facebook":            # export only (see accounts.DEFAULTS)
+            from . import youtube_upload
+            ok, msg, url, mode = True, "exportat pentru upload manual", youtube_upload.export(acc, Path(clip["file"]), caption), "export"
+        elif acc["platform"] == "youtube":
             from . import youtube_upload
             ok, msg, url, mode = youtube_upload.upload(acc, Path(clip["file"]), caption)
         else:
@@ -512,6 +595,8 @@ def run_forever(post=True):
         kill_stale_children()
         threading.Thread(target=worker, daemon=True, name="worker").start()
         threading.Thread(target=janitor_loop, daemon=True, name="janitor").start()
+        from . import channels
+        threading.Thread(target=channels.loop, args=(STOP, WATCHING), daemon=True, name="channels").start()
         if post:
             threading.Thread(target=poster, daemon=True, name="poster").start()
     seeds = list(c.get("extra_urls") or [])
@@ -531,7 +616,10 @@ def run_forever(post=True):
         if MANUAL_URLS:
             urls = MANUAL_URLS[:]; _seed(urls, ""); del MANUAL_URLS[:len(urls)]
         if not c.get("channel_url"):
-            STATUS["watcher"] = "niciun canal setat (Setari -> Canal urmarit); poti genera clipuri din orice link"
+            from . import channels
+            n = sum(1 for ch in channels.load() if ch["enabled"])
+            STATUS["watcher"] = (f"watching {n} Kick/Twitch channel(s) (Channels)" if n else
+                                 "niciun canal setat (Setari -> Canal urmarit); poti genera clipuri din orice link")
             sleep_until(STOP, 5); continue
         STATUS["watcher"] = "verific daca canalul e live..."
         try:

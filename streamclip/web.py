@@ -21,7 +21,8 @@ EDITABLE = {"youtube_client_secret": str, "language": str, "ui_language": str, "
             # General settings (1.2.1): performance, general, onboarding
             "whisper_device": str, "whisper_model": str, "whisper_compute_type": str, "max_parallel_renders": int,
             "encoder": str, "theme": str, "start_with_windows": bool, "minimize_to_tray": bool, "notifications": bool,
-            "onboarded": bool}
+            "onboarded": bool, "rotate": bool, "rotate_accounts": list, "channel_check_every_sec": int}
+from . import schema
 CHOICES = {"whisper_device": ("auto", "cuda", "cpu"),
            "whisper_model": ("auto", "large-v3", "large-v3-turbo", "medium", "small", "base", "tiny"),
            "whisper_compute_type": ("auto", "float16", "int8_float16", "int8", "float32"),
@@ -37,7 +38,7 @@ SECTIONS = {
     "posting": ["required_hashtag", "hashtags", "extra_hashtags", "hashtags_max", "caption_template", "auto_post",
                 "auto_post_min_viral", "post_order", "post_interval_min_minutes", "post_interval_max_minutes",
                 "post_jitter_minutes", "manual_min_gap_minutes", "daily_post_cap", "quiet_hours", "visibility",
-                "post_preset", "dedupe_similarity"],
+                "post_preset", "dedupe_similarity", "rotate", "rotate_accounts"],
 }
 PRESETS = {"sigur": {"daily_post_cap": 20, "post_interval_min_minutes": 40, "post_interval_max_minutes": 60},
            "normal": {"daily_post_cap": 45, "post_interval_min_minutes": 20, "post_interval_max_minutes": 30},
@@ -275,6 +276,12 @@ class H(BaseHTTPRequestHandler):
                 return self._json({"login": tiktok.LOGIN_STATE["state"]})
             if u.path == "/api/accounts":
                 return self._json(accounts_payload())
+            if u.path == "/api/schedule":
+                return self._json(app.plan_schedule(int(qs.get("n", ["12"])[0] or 12)))
+            if u.path == "/api/channels":
+                from . import channels
+                return self._json({"channels": channels.listing(), "every": int(cfg().get("channel_check_every_sec", 90)),
+                                   "watching": app.WATCHING.is_set()})
             if u.path == "/api/system":
                 from . import sysinfo
                 d = dict(sysinfo.detect(refresh=qs.get("refresh", ["0"])[0] == "1"))
@@ -407,7 +414,10 @@ class H(BaseHTTPRequestHandler):
                              for kk, vv in (v or {}).items() if kk in effects.DEFAULTS}
                         v = dict(cur, **v)
                     else:
-                        v = t(v)
+                        try:
+                            v = schema.check(k, v if k in schema.NUM else t(v))
+                        except (TypeError, ValueError) as e:
+                            return self._json({"error": str(e) if str(e).startswith(k) else f"{k}: invalid value"}, 400)
                     ch[k] = v
                 for k, opts in CHOICES.items():
                     if k in ch and ch[k] not in opts:
@@ -574,6 +584,19 @@ class H(BaseHTTPRequestHandler):
                         app.STOP.set(); import os as _os; _os._exit(0)
                 threading.Thread(target=bye, daemon=True).start()
                 return self._json({"ok": True})
+            if u.path == "/api/channels":
+                from . import channels, platforms
+                a = b.get("action")
+                try:
+                    if a == "add":
+                        return self._json({"ok": True, "channel": channels.add(b.get("channel") or "")})
+                    if a == "remove":
+                        channels.remove(str(b.get("key") or "")); return self._json({"ok": True})
+                    if a == "enable":
+                        channels.set_enabled(str(b.get("key") or ""), bool(b.get("on"))); return self._json({"ok": True})
+                except (ValueError, platforms.PlatformError) as e:
+                    return self._json({"error": str(e)}, 400)
+                return self._json({"error": "actiune necunoscuta"}, 400)
             if u.path == "/api/tiktok_login":
                 from . import tiktok
                 acc = accounts.get(b.get("account") or "") if b.get("account") else None

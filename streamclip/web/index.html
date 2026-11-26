@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark"><head><meta charset="utf-8"><title>Stream Clipper · GTA 6 clips</title>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><title>Stream Clipper · stream clips</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="/static/icon.png"><meta name="clipper-token" content="__CLIPPER_TOKEN__">
 <style>
@@ -103,7 +103,7 @@ pre{background:#07090c;color:#d1d5db;border:1px solid var(--line);border-radius:
 /* ---------- accounts ---------- */
 .accs{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}.acc{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .acc.off{opacity:.6}.acc .hd{display:flex;align-items:center;gap:10px}.acc .pl{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-weight:800;font-size:15px;flex:0 0 38px}
-.pl.tiktok{background:#111;color:#fff;box-shadow:inset -3px 0 0 #fe2c55,inset 3px 0 0 #25f4ee}.pl.youtube{background:#ff0033;color:#fff}
+.pl.tiktok{background:#111;color:#fff;box-shadow:inset -3px 0 0 #fe2c55,inset 3px 0 0 #25f4ee}.pl.youtube{background:#ff0033;color:#fff}.pl.kick{background:#53fc18;color:#000;font-weight:800}.pl.twitch{background:#9146ff;color:#fff;font-weight:800}.pl.facebook{background:#1877f2;color:#fff}
 .acc .nm{font-weight:700;font-size:15px}.acc .meta{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12.5px;color:var(--mut)}.acc .meta b{color:var(--txt)}
 .acc .tags{display:flex;flex-wrap:wrap;gap:4px}.acc .tags span{font-size:12px;background:var(--card2);border:1px solid var(--line);border-radius:99px;padding:1px 8px}
 .acc .acts{display:flex;gap:6px;flex-wrap:wrap}.meter{height:6px;background:var(--line);border-radius:4px;overflow:hidden}.meter i{display:block;height:100%;background:var(--acc2)}
@@ -161,6 +161,7 @@ pre{background:#07090c;color:#d1d5db;border:1px solid var(--line);border-radius:
     <div class="nav" data-p="clips" data-tip="Every clip: review, edit the text, re-cut, post (Ctrl+2)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></svg><span>Clips</span><span class="cnt" id="n_clips"></span></div>
     <div class="nav" data-p="queue" data-tip="What will be posted next, in order (Ctrl+3)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Queue</span><span class="cnt" id="n_queue"></span></div>
     <div class="nav" data-p="posted" data-tip="Posted and exported clips, with the account (Ctrl+4)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg><span>Posted</span><span class="cnt" id="n_posted"></span></div>
+    <div class="nav" data-p="channels" data-tip="Kick / Twitch channels recorded automatically when they go live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14"/></svg><span>Channels</span><span class="cnt" id="n_ch"></span></div>
     <div class="nav" data-p="accounts" data-tip="TikTok accounts and YouTube channels (Ctrl+5)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M17 14.6c2.3.2 3.9 1.8 4.5 4.4"/></svg><span>Accounts</span><span class="cnt" id="n_acc"></span></div>
     <div class="sec">App</div>
     <div class="nav" data-p="settings" data-tip="General, performance, storage, updates, posting (Ctrl+,)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Settings</span></div>
@@ -217,7 +218,7 @@ const TOK=document.querySelector('meta[name=clipper-token]').content;
 let page='home', sub='', S={}, P=null, SET=null, SYS=null, ACC=[], ACCX={}, CLIPF=localStorage.getItem('sc_clipf')||'all';
 let SORT=localStorage.getItem('sc_sort')||'viral', MV=+(localStorage.getItem('sc_mv')||0), STY=localStorage.getItem('sc_sty')||'', STL=[], STY_TOP5=0;
 const TITLES={home:['Home / Live','Live status, progress and quick actions'],clips:['Clips','Review, edit and post your clips'],queue:['Queue','What gets posted next, in this order'],
-  posted:['Posted','Everything posted or exported, per account'],accounts:['Accounts','TikTok accounts and YouTube Shorts channels'],settings:['Settings','Applies right away unless noted'],log:['Log','Detailed technical log (newest at the bottom)']};
+  posted:['Posted','Everything posted or exported, per account'],accounts:['Accounts','TikTok accounts and YouTube Shorts channels'],channels:['Channels','Kick and Twitch channels recorded automatically when they go live'],settings:['Settings','Applies right away unless noted'],log:['Log','Detailed technical log (newest at the bottom)']};
 async function api(p,b){const r=await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json','X-Clipper-Token':TOK},body:JSON.stringify(b)}:{});
   const j=await r.json().catch(()=>({error:'invalid response'}));if(!r.ok||j.error){toast('Error: '+(j.error||r.status),true);throw j}return j}
 function toast(m,bad){const e=document.createElement('div');e.className='toast'+(bad?' bad':'');e.textContent=m;$('#toasts').prepend(e);setTimeout(()=>e.remove(),bad?8000:4500)}
@@ -304,7 +305,7 @@ const accName=id=>{const a=ACC.find(x=>x.id===id);return a?a.name:''};
 /* ---------- render dispatcher ---------- */
 async function render(){const v=$('#view');$('#pacts').innerHTML='';
   try{if(page==='home')return await homePage(v);if(page==='clips')return await clipsPage(v);if(page==='queue')return await listPage(v,'queue');
-  if(page==='posted')return await listPage(v,'posted');if(page==='accounts')return await accountsPage(v);if(page==='settings')return await settingsPage(v);if(page==='log')return await logv(v)}catch(e){console.error(e)}}
+  if(page==='posted')return await listPage(v,'posted');if(page==='accounts')return await accountsPage(v);if(page==='channels')return await channelsPage(v);if(page==='settings')return await settingsPage(v);if(page==='log')return await logv(v)}catch(e){console.error(e)}}
 /* ---------- Home ---------- */
 async function homePage(v){
   $('#pacts').innerHTML=`<button onclick="newClipDlg()" data-tip="Ctrl+N">✂️ New clips from a link</button>`;
@@ -337,7 +338,7 @@ async function prog(){try{P=await api('/api/progress')}catch(e){return}const q=P
    <span>${v.live?'Live length so far':'VOD length'}: <b>${dur(v.total)}</b></span><span>Remaining: <b>${dur(v.remaining)}</b></span>
    <span>Catches up in: <b>${v.remaining<60?'✔ up to date':v.eta!=null?'~'+dur(v.eta):(P.speed?'will not catch up ('+P.speed+'×)':'calculating…')}</b></span>
    <span>Chunks: <b>${v.chunks_done}</b> done, <b>${v.chunks_queued}</b> queued</span></div></div>`).join('')
-   :`<div class="empty" style="padding:22px"><div class="big" style="font-size:30px">📡</div><h3>Nothing live right now</h3><p>${SET&&SET.channel_url?'Watching '+esc(SET.channel_url)+' – clips start by themselves when it goes live.':'No channel to watch yet. Add one in Settings → Watching &amp; clipping, or paste a link above.'}</p>${SET&&!SET.channel_url?'<button onclick="go(\'settings\',\'clipping\')">Add a channel to watch</button>':''}</div>`;
+   :`<div class="empty" style="padding:22px"><div class="big" style="font-size:30px">📡</div><h3>Nothing live right now</h3><p>${SET&&SET.channel_url?'Watching '+esc(SET.channel_url)+' – clips start by themselves when it goes live.':'No channel to watch yet. Add a Kick or Twitch channel under Channels (or a YouTube channel in Settings), or paste a link above.'}</p>${SET&&!SET.channel_url?'<button onclick="go(\'channels\')">Add a channel to watch</button>':''}</div>`;
   const np=P.backoff?`TikTok pause until ${when(P.backoff.until)}`:q.next_post_in!=null&&q.next_post_in>0?`in ${dur(q.next_post_in)}`:(P.auto_post||q.manual?'now':'— (Auto-post OFF)');
   e.innerHTML=`<h3>📊 Progress <span class="muted" style="font-size:12.5px;font-weight:400">${P.watching?'👁 watching':'⏹ not watching'} · ${esc(P.watcher||'')}</span></h3>
   <div class="pgrid"><div>${vids}${stageRow('⚙ Processing',P.stages.watcher)}${stageRow('⬇️ Download',P.stages.download)}${stageRow('📤 Posting',P.stages.post)}${P.stages.job&&P.stages.job.stage&&P.stages.job.stage!=='astept'?stageRow('✂️ Link job',P.stages.job):''}</div>
@@ -389,7 +390,7 @@ function card(c){
   return `<div class="card"><div class="thumb" onclick="play(${c.id})"><img loading="lazy" src="/media/${c.id}/thumb" onerror="this.style.display='none'"><span class="playic">▶</span>
   <span class="badge v" title="${esc(c.viral_tip)}">🔥 ${c.viral}%</span><span class="badge r">${c.dur}s</span>
   ${c.pos?`<span class="badge pos" title="${c.plan==='manual'?'approved by you (goes first)':'picked by Auto-post'}">#${c.pos}${c.pos===1?' · next':''} ${c.plan==='manual'?'✋':'🤖'}</span>`:''}
-  ${c.account_name?`<span class="badge acc">${c.account_platform==='youtube'?'▶️':'🎵'} ${esc(c.account_name)}</span>`:''}</div><div class="body">
+  ${c.account_name?`<span class="badge acc">${c.account_platform==='youtube'?'▶️':c.account_platform==='facebook'?'📘':'🎵'} ${esc(c.account_name)}</span>`:''}</div><div class="body">
   <div><span class="chip" onclick="setSty('${c.style}')" title="Clip style (detected). Click = show only this style">${esc(c.style_label)}</span> <b>${esc(c.hook||'')}</b></div>
   <details class="vd"><summary class="vir" title="${esc(c.viral_tip)}">🔥 Viral chance: <b>${c.viral}%</b><span class="bar"><i style="width:${c.viral}%"></i></span>ⓘ</summary>
   <div class="fl">${(c.factors_list||[]).map(([l,v])=>`<div>${esc(l)}<span class="bar"><i style="width:${v}%"></i></span>${v}%</div>`).join('')||'<div class="muted">estimate from the detector score</div>'}</div></details>
@@ -431,14 +432,18 @@ async function listPage(v,kind){
   if(kind==='queue'){const list=await api(`/api/clips?status=queue&sort=plan&min_viral=0&style=`);
     $('#pacts').innerHTML=`<button onclick="togglePause()">${S.post_paused?'▶ Resume posting':'⏸ Pause posting'}</button>`;
     if(!list.length){v.innerHTML=empty('⏳','The queue is empty',S.auto_post?'Auto-post is ON: clips above the viral threshold join the queue by themselves.':'Press “📤 Post” on a clip in Clips to queue it. With Auto-post OFF (the default), nothing is posted without you.',`<button class="pri" onclick="go('clips')">Go to Clips</button>`);return}
-    v.innerHTML=`<div class="note">Posting goes <b>one clip at a time</b>, in this order: first the clips you approved (✋), then – only if Auto-post is ON – the most viral ones (🤖). Each account keeps its own daily limit and pace.</div><div class="grid">`+list.map(c=>card(c)).join('')+'</div>';return}
+    const sc=await api('/api/schedule?n=12').catch(()=>({items:[]}));const PI={tiktok:'🎵',youtube:'▶️',facebook:'📘'};
+    const sched=sc.items.length?`<div class="box" style="padding:0;overflow:auto;margin-bottom:14px"><div style="padding:10px 14px"><b>🗓 Planned schedule</b> <span class="muted" style="font-size:12px">estimate · ${sc.rotate?'rotating over '+sc.accounts+' account(s)':'rotation off'} · ${sc.auto_post?'Auto-post ON':'only clips you approved (Auto-post OFF)'}</span></div>
+     <table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="text-align:left;color:var(--mut)"><th style="padding:6px 14px">When</th><th>Clip</th><th>Account</th><th></th></tr>
+     ${sc.items.map(i=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px 14px;white-space:nowrap">${new Date(i.at*1000).toLocaleString([], {weekday:'short',hour:'2-digit',minute:'2-digit'})}</td><td>${esc(i.hook||('#'+i.id))}</td><td>${PI[i.platform]||''} ${esc(i.account)}</td><td class="muted" style="font-size:12px;padding-right:14px">${i.export?'export (manual upload)':''}${i.plan==='manual'?' ✋':' 🤖'}</td></tr>`).join('')}</table></div>`:'';
+    v.innerHTML=`<div class="note">Posting goes <b>one clip at a time</b>, in this order: first the clips you approved (✋), then – only if Auto-post is ON – the most viral ones (🤖). Each account keeps its own daily limit and pace.</div>${sched}<div class="grid">`+list.map(c=>card(c)).join('')+'</div>';return}
   const list=await api(`/api/clips?status=posted&sort=new&min_viral=0&style=`);
   if(!list.length){v.innerHTML=empty('✅','Nothing posted yet','Posted clips (and YouTube exports) show up here with the account, time and link.');return}
   v.innerHTML=`<div class="box" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
    <tr style="text-align:left;color:var(--mut)"><th style="padding:10px 14px"></th><th>Clip</th><th>Account</th><th>When</th><th>Status</th><th></th></tr>
    ${list.map(c=>`<tr style="border-top:1px solid var(--line)"><td style="padding:8px 14px;width:56px"><img src="/media/${c.id}/thumb" style="width:40px;height:70px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="play(${c.id})" onerror="this.style.visibility='hidden'"></td>
    <td><b>${esc(c.hook||c.name)}</b><div class="muted" style="font-size:12px;max-width:520px">${esc(c.caption)}</div></td>
-   <td>${c.account_name?`${c.account_platform==='youtube'?'▶️':'🎵'} ${esc(c.account_name)}`:'<span class="muted">—</span>'}</td><td>${when(c.posted_at)}</td><td><span class="st ${c.status}">${c.status}</span></td>
+   <td>${c.account_name?`${c.account_platform==='youtube'?'▶️':c.account_platform==='facebook'?'📘':'🎵'} ${esc(c.account_name)}`:'<span class="muted">—</span>'}</td><td>${when(c.posted_at)}</td><td><span class="st ${c.status}">${c.status}</span></td>
    <td style="padding-right:14px">${c.url?`<a href="${esc(c.url)}" target="_blank">Open ↗</a>`:c.status==='exported'?`<a href="#" onclick="openFolder('exports');return false">Folder</a>`:''}</td></tr>`).join('')}</table></div>`}
 /* ---------- Log ---------- */
 async function logv(v){const l=await api('/api/log?n=400');$('#pacts').innerHTML=`<button onclick="openFolder('data')">📂 Data folder</button>`;
@@ -455,6 +460,24 @@ async function doUpdate(){const r=await confirmDlg({title:'Install v'+VER.latest
   body:'<p>Downloads the official release from GitHub, checks its <b>SHA-256</b>, makes a backup of the current version and restarts. Your settings, clips, accounts and logins stay.</p>'+(VER.notes?`<pre style="max-height:180px">${esc(VER.notes.slice(0,1500))}</pre>`:'')});
   if(!r.ok)return;await api('/api/update',{});ver()}
 function aboutDlg(){$('#aboutVer').textContent='Version '+(VER.version||'?');dlg('aboutOv')}
+/* ---------- Channels (Kick / Twitch auto-watch) ---------- */
+let CHT=null;
+const CHS={recording:['🔴','Recording live','on'],offline:['⚪','Offline – checking regularly',''],checking:['⏳','Checking…',''],error:['⚠️','Problem','exp'],off:['⏸','Disabled','']};
+async function channelsPage(v){const d=await api('/api/channels');$('#n_ch').textContent=d.channels.length||'';
+  $('#pacts').innerHTML='';
+  v.innerHTML=`<div class="note">Add a <b>Kick</b> or <b>Twitch</b> channel. Stream Clipper checks it every ${Math.round(d.every/60*10)/10} min while it runs (also minimized to the tray), records automatically when the channel goes live, stops when the live ends, and turns it into clips in <b>Clips</b>. Nothing is posted unless you post it (or turn on Auto-post).${d.watching?'':' <b>Watching is stopped</b> – press <i>Start watching</i> (bottom left).'}</div>
+  <div class="card" style="display:flex;gap:8px;align-items:center"><input id="chIn" placeholder="kick.com/name  or  twitch.tv/name" style="flex:1" onkeydown="if(event.key==='Enter')chAdd()"><button class="pri" onclick="chAdd()">➕ Add channel</button></div>
+  <div class="accs">${d.channels.map(c=>{const [ic,lb,cl]=CHS[c.status]||CHS.checking;
+    return `<div class="acc ${c.enabled?'':'off'}"><div class="hd"><div class="pl ${c.platform}">${c.platform==='kick'?'K':'T'}</div><div><div class="nm">${esc(c.name)}</div><div class="muted" style="font-size:12px">${c.platform==='kick'?'Kick':'Twitch'} · <span class="cstate ${cl}"><i></i>${ic} ${lb}</span></div></div><span class="sp"></span>
+     <div class="sw ${c.enabled?'on':''}" style="padding:4px 8px" onclick="chEnable('${c.key}',${!c.enabled})" data-tip="${c.enabled?'Enabled – click to stop watching this channel':'Disabled – click to watch it again'}"><span class="knob"></span></div></div>
+     ${c.title?`<div style="font-size:12.5px">${esc(c.title)}${c.game?` · <b>${esc(c.game)}</b>`:''}</div>`:''}
+     ${c.msg?`<div class="muted" style="font-size:12px">${esc(c.msg)}</div>`:''}
+     <div class="meta">${c.last_check?`<span>Checked <b>${new Date(c.last_check*1000).toLocaleTimeString()}</b></span>`:''}${c.since?`<span>Live since <b>${new Date(c.since*1000).toLocaleTimeString()}</b></span>`:''}</div>
+     <div class="acts"><button class="sm" onclick="openUrl('${c.url}')">↗ Open</button><button class="sm" onclick="chRemove('${c.key}')">🗑 Remove</button></div></div>`}).join('')||'<div class="empty"><div class="big">📡</div><h3>No channels yet</h3><p>Add your friend\'s Kick channel above – the next live gets clipped automatically.</p></div>'}</div>`;
+  clearTimeout(CHT);CHT=setTimeout(()=>{if(page==='channels')render()},10000)}
+async function chAdd(){const t=$('#chIn').value.trim();if(!t)return;try{const r=await api('/api/channels',{action:'add',channel:t});toast('Watching '+r.channel.name+' ('+r.channel.platform+')');render()}catch(e){}}
+async function chEnable(k,on){await api('/api/channels',{action:'enable',key:k,on});render()}
+async function chRemove(k){const r=await confirmDlg({title:'Remove channel?',body:'<p>It will no longer be recorded. Clips already made stay.</p>',ok:'Remove'});if(r.ok){await api('/api/channels',{action:'remove',key:k});render()}}
 /* ---------- Accounts ---------- */
 async function accountsPage(v){await loadAcc();
   $('#pacts').innerHTML=`<button class="pri" onclick="accEdit()">➕ Add account</button>`;
@@ -462,16 +485,16 @@ async function accountsPage(v){await loadAcc();
   v.innerHTML=`<div class="note">Each account has <b>its own login</b>, hashtags, daily limit and pace. Clips go to the account you pick on the clip, or to the <b>default rotation</b> (the enabled account that posted the least today). Limits are deliberately low for new accounts – posting a lot from a fresh account is the fastest way to get flagged as spam.</div>
   ${yt?'':`<div class="note" style="border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.08)">▶️ <b>YouTube Shorts:</b> to upload through the official YouTube Data API, create your own OAuth client (Google Cloud Console → Desktop app, YouTube Data API v3 enabled) and set <code>youtube_client_secret</code> in config.yaml. Until then YouTube accounts work in <b>export mode</b>: the clip plus title/description are saved for a manual upload. <a href="#" onclick="openUrl(REPO+'#youtube-shorts');return false">How to set it up</a></div>`}
   <div class="accs">${ACC.map(accCard).join('')}</div>`}
-function accCard(a){const yt=a.platform==='youtube';const pct=Math.min(100,Math.round(a.today/a.daily_cap*100));
-  const cs=yt?(a.mode==='api'?'<span class="cstate on"><i></i>API connected</span>':'<span class="cstate exp"><i></i>Export mode (manual upload)</span>')
+function accCard(a){const yt=a.platform==='youtube',fb=a.platform==='facebook';const pct=Math.min(100,Math.round(a.today/a.daily_cap*100));
+  const cs=fb?'<span class="cstate exp"><i></i>Export only (manual upload)</span>':yt?(a.mode==='api'?'<span class="cstate on"><i></i>API connected</span>':'<span class="cstate exp"><i></i>Export mode (manual upload)</span>')
             :(a.connected?'<span class="cstate on"><i></i>Login saved</span>':'<span class="cstate"><i></i>Not logged in yet</span>');
-  return `<div class="acc ${a.enabled?'':'off'}"><div class="hd"><div class="pl ${a.platform}">${yt?'▶':'♪'}</div><div><div class="nm">${esc(a.name)}</div><div class="muted" style="font-size:12px">${yt?'YouTube Shorts':'TikTok'} · ${cs}</div></div><span class="sp"></span>
+  return `<div class="acc ${a.enabled?'':'off'}"><div class="hd"><div class="pl ${a.platform}">${fb?'f':yt?'▶':'♪'}</div><div><div class="nm">${esc(a.name)}</div><div class="muted" style="font-size:12px">${fb?'Facebook Reels':yt?'YouTube Shorts':'TikTok'} · ${cs}</div></div><span class="sp"></span>
    <div class="sw ${a.enabled?'on':''}" style="padding:4px 8px" onclick="accToggle('${a.id}','enabled',${!a.enabled})" data-tip="${a.enabled?'Enabled – click to pause this account':'Paused – click to enable'}"><span class="knob"></span></div></div>
    <div><div class="row" style="font-size:12.5px;justify-content:space-between"><span>Today <b>${a.today}/${a.daily_cap}</b></span><span class="muted">${a.queued} queued</span></div><div class="meter"><i style="width:${pct}%"></i></div></div>
    <div class="meta"><span>Pace <b>${a.interval_min}–${a.interval_max} min</b></span><span>Visibility <b>${esc(a.visibility)}</b></span>
     <span>Rotation <b>${a.rotation?'yes':'no'}</b></span><span>Required tag <b>${esc(a.required_hashtag||'—')}</b></span></div>
    <div class="tags">${(a.hashtags||[]).map(t=>`<span>${esc(t)}</span>`).join('')||'<span class="muted" style="border:0;background:none;padding:0">uses the global hashtags</span>'}</div>
-   <div class="acts">${yt?(a.mode==='api'?`<button class="sm" onclick="ytDisconnect('${a.id}')">Disconnect</button>`:`<button class="sm pri" onclick="ytConnect('${a.id}')" ${ACCX.youtube_configured?'':'disabled data-tip="Set youtube_client_secret in config.yaml first"'}>🔗 Connect YouTube</button><button class="sm" onclick="openFolder('exports')">📂 Exports</button>`)
+   <div class="acts">${fb?`<button class="sm" onclick="openFolder('exports')">📂 Exports</button>`:yt?(a.mode==='api'?`<button class="sm" onclick="ytDisconnect('${a.id}')">Disconnect</button>`:`<button class="sm pri" onclick="ytConnect('${a.id}')" ${ACCX.youtube_configured?'':'disabled data-tip="Set youtube_client_secret in config.yaml first"'}>🔗 Connect YouTube</button><button class="sm" onclick="openFolder('exports')">📂 Exports</button>`)
      :`<button class="sm ${a.connected?'':'pri'}" onclick="ttLogin('${a.id}')" data-tip="Opens a browser window: log in once, the session is saved for this account only">🔑 ${a.connected?'Log in again':'Log in'}</button>`}
     <button class="sm" onclick="accEdit('${a.id}')">✏️ Edit</button><span class="sp"></span><button class="sm danger" onclick="accRemove('${a.id}')" data-tip="Remove this account">🗑</button></div></div>`}
 async function accToggle(id,k,v){const a=ACC.find(x=>x.id===id);await api('/api/accounts',{action:'save',account:Object.assign({},a,{[k]:v})});render()}
@@ -487,7 +510,7 @@ async function accRemove(id){const a=ACC.find(x=>x.id===id);if(ACC.length<2){toa
 let ACCED=null;
 function accEdit(id){go('accounts');const a=id?ACC.find(x=>x.id===id):null;ACCED=a?a.id:null;const p=a?a.platform:'tiktok';const D=(ACCX.defaults||{})[p]||{};
   $('#accT').textContent=a?'Edit account':'Add an account';
-  $('#accB').innerHTML=`${a?'':`<div class="opts">${[['tiktok','🎵 TikTok','Posts from a browser window with its own saved login'],['youtube','▶️ YouTube Shorts','Official API with your own OAuth client, or export for manual upload']].map(([k,t,d])=>`<div class="opt ${k===p?'act':''}" onclick="accPlat('${k}')" data-k="${k}"><b>${t}</b><small>${d}</small></div>`).join('')}</div>`}
+  $('#accB').innerHTML=`${a?'':`<div class="opts">${[['tiktok','🎵 TikTok','Posts from a browser window with its own saved login'],['youtube','▶️ YouTube Shorts','Official API with your own OAuth client, or export for manual upload'],['facebook','📘 Facebook Reels','Export only: the clip + caption are saved for a manual upload (no official API for personal profiles)']].map(([k,t,d])=>`<div class="opt ${k===p?'act':''}" onclick="accPlat('${k}')" data-k="${k}"><b>${t}</b><small>${d}</small></div>`).join('')}</div>`}
    <input type="hidden" id="ae_platform" value="${p}">
    <div class="fl2"><span>Name (only for you, e.g. “Main TikTok”, “Clips channel”)</span><input type="text" id="ae_name" value="${esc(a?a.name:'')}" placeholder="My account"></div>
    <div class="fl2"><span>Hashtags for this account (empty = use the global ones)</span><input type="text" id="ae_hashtags" value="${esc(a?(a.hashtags||[]).join(' '):'')}" placeholder="#gaming #clips"></div>
@@ -569,6 +592,7 @@ async function settingsPage(v){if(!sub)sub='general';SET=await api('/api/setting
      fld('post_jitter_minutes','Random variation','± minutes',nm('post_jitter_minutes',s.post_jitter_minutes??4,0,15))+
      fld('manual_min_gap_minutes','Gap between clips you approved','minutes',nm('manual_min_gap_minutes',s.manual_min_gap_minutes??3,0))+
      fld('daily_post_cap','Max posts per day (all accounts)','',nm('daily_post_cap',s.daily_post_cap,1,200))+
+     fld('rotate','Rotate between accounts','Clips without a chosen account take turns over your accounts (round-robin). Each account keeps its own daily limit and minutes between posts; a clip never goes twice to the same account. Off = everything goes to the first enabled account. See the planned schedule in Queue.',ck('rotate',s.rotate!==false,'Rotate'))+
      fld('quiet_hours','Quiet hours','No automatic posts in these hours, e.g. 3 4 5 6.',tx('quiet_hours',(s.quiet_hours||[]).join(' '),'3 4 5 6','tags')))+
     grp('Auto-post',fld('auto_post_min_viral','Minimum viral chance (%)','Clips you approve yourself always go.',nm('auto_post_min_viral',s.auto_post_min_viral??40,0,100))+
      fld('post_order','Order','',sl('post_order',s.post_order==='best_first'?'viral_first':s.post_order,[['viral_first','🔥 Most viral first'],['newest_first','🆕 Newest first']]))+

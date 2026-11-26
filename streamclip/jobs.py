@@ -108,14 +108,23 @@ def _fetch(j, folder):
         j["game"] = game.remember_from("job-" + j["id"], {"title": p.stem})
         return p, 0.0, p.stem
     from yt_dlp import YoutubeDL
+    from . import platforms
     _set(j, 1, "citesc linkul…")
+    info = None
     try:
-        with YoutubeDL(dict(ytdlp_opts(), quiet=True, skip_download=True, noplaylist=True)) as y:
-            info = y.extract_info(src, download=False)
-    except Exception as e:
-        if "not currently live" in str(e) or "is offline" in str(e).lower():
-            raise RuntimeError("canalul nu e live acum (Twitch/Kick/YouTube): dă linkul unui VOD sau așteaptă live-ul") from None
-        raise
+        info = platforms.kick_info(src)      # Kick: its public API (yt-dlp's Kick extractor breaks often)
+    except platforms.PlatformError as e:
+        if "not live" in str(e):
+            raise RuntimeError(str(e)) from None
+        log.info("Kick API: %s - trying yt-dlp", e)
+    if info is None:
+        try:
+            with YoutubeDL(dict(ytdlp_opts(), quiet=True, skip_download=True, noplaylist=True)) as y:
+                info = y.extract_info(src, download=False)
+        except Exception as e:
+            if "not currently live" in str(e) or "is offline" in str(e).lower():
+                raise RuntimeError("canalul nu e live acum (Twitch/Kick/YouTube): dă linkul unui VOD sau așteaptă live-ul") from None
+            raise RuntimeError(platforms.friendly(e)) from None
     title = info.get("title") or src
     j["game"] = game.remember_from("job-" + j["id"], info, src)      # Twitch/Kick/YouTube category -> titles + hashtags only
     max_h = cfg().get("video_max_height", 1080)
@@ -135,6 +144,8 @@ def _fetch(j, folder):
         url, hdrs = live_stream_url(info, max_h)
         if not url:
             raise RuntimeError("nu găsesc fluxul video al live-ului")
+        if info.get("extractor") == "kick:api":
+            url = platforms.hls_variant(url, max_h, hdrs)
         # Twitch / Kick / YouTube HLS: same headers as yt-dlp, and reconnect if the connection drops while recording
         pre = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5", "-rw_timeout", "30000000"]
         if hdrs:
@@ -145,14 +156,25 @@ def _fetch(j, folder):
     dur = info.get("duration") or 0
     s = s or 0.0
     e = e if e is not None else (min(dur, s + MAX_LEN) if dur else s + MAX_LEN)
+    if info.get("extractor") == "kick:api":                    # Kick VOD = plain HLS: ffmpeg cuts the range directly
+        hdrs = info.get("http_headers") or {}
+        url = platforms.hls_variant(info["url"], max_h, hdrs)
+        _set(j, 2, f"descarc {(e - s) / 60:.0f} minute…")
+        run([tool("ffmpeg"), "-y", "-v", "error", "-headers", "".join(f"{k}: {v}\r\n" for k, v in hdrs.items()),
+             "-ss", f"{s}", "-i", url, "-t", f"{e - s}", "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", folder / "src.ts"],
+            timeout=max(900, (e - s) * 2))
+        return folder / "src.ts", s, title
     o = dict(ytdlp_opts(), quiet=True, noprogress=True, progress_hooks=[hook], noplaylist=True,
              format=f"bv*[height<={max_h}]+ba/b[height<={max_h}]/b", merge_output_format="mp4",
              outtmpl=str(folder / "src.%(ext)s"))
     if s > 0 or (dur and e < dur):
         from yt_dlp.utils import download_range_func
         o.update(download_ranges=download_range_func(None, [(s, e)]), force_keyframes_at_cuts=False)
-    with YoutubeDL(o) as y:
-        y.download([src])
+    try:
+        with YoutubeDL(o) as y:
+            y.download([src])
+    except Exception as ex:
+        raise RuntimeError(platforms.friendly(ex)) from None
     got = out if out.exists() else next(iter(sorted(folder.glob("src.*"))), None)
     if not got:
         raise RuntimeError("descărcarea nu a produs niciun fișier")

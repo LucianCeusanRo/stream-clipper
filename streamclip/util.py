@@ -170,6 +170,8 @@ def cfg():
         low = {t.lower() for t in req}
         c["hashtags"] = req + [t for t in _tags(c.get("hashtags")) if t.lower() not in low]
         c["extra_hashtags"] = [t for t in _tags(c.get("extra_hashtags")) if t.lower() not in low]
+        from .schema import sanitize
+        sanitize(c, log)
         _cfg, _cfg_stamp = c, stamp
     return _cfg
 

@@ -12,11 +12,14 @@ import re, threading, time
 from .util import DATA, cfg, load_json, log, save_json
 
 FILE = DATA / "accounts.json"
-PLATFORMS = ("tiktok", "youtube")
+PLATFORMS = ("tiktok", "youtube", "facebook")
 DEFAULTS = {
     "tiktok": {"daily_cap": 15, "interval_min": 30, "interval_max": 60, "visibility": "public"},
     # YouTube API: an upload costs 1600 of the default 10,000 daily quota units -> at most ~6 uploads/day
     "youtube": {"daily_cap": 5, "interval_min": 60, "interval_max": 120, "visibility": "public"},
+    # Facebook Reels: export only. Meta's official Reels publishing API works for Pages, but needs a Meta app,
+    # app review and a Page token - out of scope for a desktop app. The clip + caption are saved for a manual upload.
+    "facebook": {"daily_cap": 10, "interval_min": 30, "interval_max": 60, "visibility": "public"},
 }
 LIMITS = {"daily_cap": (1, 100), "interval_min": (5, 1440), "interval_max": (5, 1440)}
 _lk = threading.RLock()
@@ -140,17 +143,33 @@ def export_dir(acc):
     return DATA / "exports" / acc["id"]
 
 
-def rotation_pick(posted_counts=None, last_used=None):
-    """Default target for a clip with no account chosen: the enabled rotation account that posted least today
-    (ties: the one used longest ago)."""
-    cand = [a for a in all_accounts() if a["enabled"] and a["rotation"]]
-    if not cand:
-        cand = [a for a in all_accounts() if a["enabled"]]
+def rotation_candidates(exclude=(), rotate=None):
+    """Accounts a clip without a chosen account may go to (rotate OFF -> only the first enabled one)."""
+    rotate = cfg().get("rotate", True) if rotate is None else rotate
+    en = [a for a in all_accounts() if a["enabled"] and a["id"] not in exclude]
+    if not rotate:
+        return en[:1]
+    sel = set(cfg().get("rotate_accounts") or [])
+    return [a for a in en if a["rotation"] and (not sel or a["id"] in sel)] or en
+
+
+def rotation_pick(posted_counts=None, last_used=None, ready=None, exclude=(), rotate=None):
+    """Default target for a clip with no account chosen.
+    Rotate ON (default): round-robin over the enabled rotation accounts - the one that posted least today, ties:
+    the one used longest ago; accounts that can post right now (ready(acc) -> bool) are preferred, so a capped or
+    "too soon" account never blocks the others. Rotate OFF: always the first enabled account.
+    exclude = accounts that already have this clip (never the same clip twice on one account)."""
+    cand = rotation_candidates(exclude, rotate)
     if not cand:
         return None
     posted_counts = posted_counts or {}
     last_used = last_used or {}
-    return min(cand, key=lambda a: (posted_counts.get(a["id"], 0), last_used.get(a["id"], 0)))["id"]
+    order = sorted(cand, key=lambda a: (posted_counts.get(a["id"], 0), last_used.get(a["id"], 0)))
+    if ready:
+        for a in order:
+            if ready(a):
+                return a["id"]
+    return order[0]["id"]
 
 
 def public(acc):
@@ -159,6 +178,9 @@ def public(acc):
     if acc["platform"] == "tiktok":
         d["connected"] = profile_dir(acc).exists()
         d["mode"] = "browser"
+    elif acc["platform"] == "facebook":
+        d["connected"] = False
+        d["mode"] = "export"
     else:
         d["connected"] = token_file(acc).exists()
         d["mode"] = "api" if d["connected"] else "export"

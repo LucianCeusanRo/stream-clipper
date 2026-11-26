@@ -312,11 +312,20 @@ def account_stats(since):
     return out
 
 
+def accounts_with(clip):
+    """Accounts that already have this clip (same video + same cut) posted, exported, posting or queued."""
+    return {r["a"] for r in q("SELECT COALESCE(account,'main') a FROM clips WHERE video_id=? AND ABS(start-?)<0.5 AND ABS(end-?)<0.5 "
+                             "AND id!=? AND (status IN ('posted','unconfirmed','posting','exported') OR (status='queued' AND account IS NOT NULL))",
+                             (clip["video_id"], clip["start"], clip["end"], clip["id"]))}
+
+
 def clone_clip(cid, account):
     """'Also post to another account': a copy of the clip row targeted at that account, queued."""
     r = q("SELECT * FROM clips WHERE id=?", (cid,), one=True)
     if not r:
         raise ValueError("clip inexistent")
+    if account in accounts_with(r) or (r["account"] == account and r["status"] in ("posted", "unconfirmed", "posting", "exported", "queued")):
+        raise ValueError("this clip is already posted or queued on that account")
     d = {k: r[k] for k in r.keys() if k not in ("id", "status", "posted_at", "url", "error", "attempts", "queued_at")}
     if d.get("file") and os.path.exists(d["file"]):            # own copy: cleanup of one never breaks the other
         base, ext = os.path.splitext(d["file"])
