@@ -370,7 +370,7 @@ async function clipsPage(v){await loadStyles();
        `<button class="pri" onclick="newClipDlg()">✂️ Paste a link</button> <button onclick="go('settings','clipping')">👁 Watch a channel</button>`));return}
   v.innerHTML=tools+'<div class="grid">'+list.map(c=>card(c,'clips')).join('')+'</div>'}
 function empty(ic,t,p,btn){return `<div class="empty"><div class="big">${ic}</div><h3>${t}</h3><p>${p}</p>${btn||''}</div>`}
-function gameBox(c){return `<input class="sm" style="width:100%;font-size:12px;padding:4px 6px;margin:4px 0" value="${esc(c.game||'')}" placeholder="🎮 Game: auto-detected (type to change)" title="Game used in this clip's title and hashtags (never on the video). Empty = detected from the stream; unknown = neutral #gaming #clips" onchange="setGame(${c.id},this.value)">`}
+function gameBox(c){return `<input class="sm" style="width:100%;box-sizing:border-box;font-size:12px;padding:5px 8px;margin:4px 0;background:#0d0f14;color:#e9edf3;border:1px solid #2a3140;border-radius:6px" value="${esc(c.game||'')}" placeholder="🎮 Game: auto-detected (type to change)" title="Game used in this clip's title and hashtags (never on the video). Empty = detected from the stream; unknown = neutral #gaming #clips" onchange="setGame(${c.id},this.value)">`}
 async function setGame(id,v){const r=await api('/api/clip',{id,action:'set_game',game:v});const t=$('#cap'+id);if(t&&r.caption)t.value=r.caption;toast(v?'Game set ✔':'Game: automatic ✔')}
 function accSelect(c){if(ACC.length<2)return '';return `<select class="sm" style="font-size:12px;padding:4px 6px" onchange="setAcc(${c.id},this.value)" data-tip="Which account posts this clip">
   <option value="">🔄 Auto (rotation)</option>${ACC.filter(a=>a.enabled).map(a=>`<option value="${esc(a.id)}" ${c.account===a.id?'selected':''}>${a.platform==='youtube'?'▶️':'🎵'} ${esc(a.name)}</option>`).join('')}</select>`}
@@ -397,8 +397,7 @@ function card(c){
   ${editable(c)?`<textarea id="cap${c.id}" onchange="saveCap(${c.id})" title="Title + description + hashtags. Edit freely.">${esc(c.caption)}</textarea>`:`<div style="font-size:13px">${esc(c.caption)}</div>`}
   ${c.status&&!['pending'].includes(c.status)?`<div style="font-size:12px"><span class="st ${c.status}">${c.status}</span> ${esc(c.error||'')} ${when(c.posted_at)}</div>`:''}
   ${editable(c)?`<div class="row2"><button class="sm" onclick="retext(${c.id})" title="New title + description + hashtags (a different variant on every press)">🔄 New text</button>
-  ${gameBox(c)}
-  <button class="sm" onclick="toggleRc(${c.id})" ${c.can_recut?'':'disabled title="The source of this clip is gone (old clip)"'} title="Move the start/end and render again">✂️ Re-cut</button></div>${accSelect(c)}
+  <button class="sm" onclick="toggleRc(${c.id})" ${c.can_recut?'':'disabled title="The source of this clip is gone (old clip)"'} title="Move the start/end and render again">✂️ Re-cut</button></div>${gameBox(c)}${accSelect(c)}
   <div class="rc ${RC[c.id]?'open':''}" id="rc${c.id}">${rcPanel(c.id)}</div>`:''}
   <div class="row">${actions(c)}</div></div></div>`}
 const RC={};
