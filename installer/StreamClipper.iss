@@ -76,14 +76,25 @@ end;
 
 { "Stream Clipper" task: highest privileges, started on demand by the launcher (schtasks /run) -> elevated
   without a UAC prompt. No trigger: autostart still uses HKCU\...\Run -> launcher -> this task. }
+function PsQ(S: String): String;
+begin
+  Result := S;
+  StringChangeEx(Result, '''', '''''', True);
+end;
+
 procedure CreateElevatedTask();
 var
-  X: TArrayOfString;
-  F, Exe: String;
+  X, P: TArrayOfString;
+  F, L, S1, Exe: String;
+  Out: AnsiString;
   R: Integer;
+  Ok: Boolean;
 begin
   F := ExpandConstant('{tmp}\sc-task.xml');
+  L := ExpandConstant('{tmp}\sc-task.log');
+  S1 := ExpandConstant('{tmp}\sc-task.ps1');
   Exe := ExpandConstant('{app}\Stream Clipper.exe');
+  Ok := False;
   SetArrayLength(X, 1);
   X[0] := '<?xml version="1.0" encoding="UTF-8"?>' +
     '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">' +
@@ -96,10 +107,42 @@ begin
     '<WorkingDirectory>' + XmlEsc(ExpandConstant('{app}')) + '</WorkingDirectory></Exec></Actions></Task>';
   if SaveStringsToUTF8File(F, X, False) then
   begin
-    if not Exec(ExpandConstant('{sys}\schtasks.exe'), '/create /tn "Stream Clipper" /xml "' + F + '" /f', '', SW_HIDE, ewWaitUntilTerminated, R) or (R <> 0) then
-      Log('schtasks /create failed: ' + IntToStr(R) + ' (the launcher falls back to a normal UAC prompt)');
+    { through cmd so schtasks' own error text lands in the install log }
+    if Exec(ExpandConstant('{cmd}'), '/c ""' + ExpandConstant('{sys}\schtasks.exe') + '" /create /tn "Stream Clipper" /xml "' + F + '" /f > "' + L + '" 2>&1"',
+            '', SW_HIDE, ewWaitUntilTerminated, R) and (R = 0) then
+      Ok := True
+    else
+    begin
+      if LoadStringFromFile(L, Out) then Log('schtasks /xml said: ' + String(Out));
+      Log('schtasks /create /xml failed (' + IntToStr(R) + '), trying Register-ScheduledTask');
+    end;
     DeleteFile(F);
   end;
+  if not Ok then
+  begin
+    { same settings via PowerShell: allowed on battery, no 3-day limit, highest privileges, only while signed in }
+    SetArrayLength(P, 6);
+    P[5] := 'exit 0';
+    P[0] := '$ErrorActionPreference = ''Stop''';
+    P[1] := '$a = New-ScheduledTaskAction -Execute ''' + PsQ(Exe) + ''' -Argument ''--elevated'' -WorkingDirectory ''' + PsQ(ExpandConstant('{app}')) + '''';
+    P[2] := '$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances Parallel';
+    P[3] := '$p = New-ScheduledTaskPrincipal -UserId ''' + PsQ(GetUserNameString) + ''' -LogonType Interactive -RunLevel Highest';
+    P[4] := 'Register-ScheduledTask -TaskName ''Stream Clipper'' -Action $a -Settings $s -Principal $p -Force | Out-Null';
+    if SaveStringsToUTF8File(S1, P, False) then
+    begin
+      if Exec(ExpandConstant('{cmd}'), '/c "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + S1 + '" > "' + L + '" 2>&1"',
+              '', SW_HIDE, ewWaitUntilTerminated, R) and (R = 0) then
+        Ok := True
+      else
+      begin
+        if LoadStringFromFile(L, Out) then Log('Register-ScheduledTask said: ' + String(Out));
+        Log('elevated task not created (' + IntToStr(R) + '): the launcher falls back to a normal UAC prompt');
+      end;
+      DeleteFile(S1);
+    end;
+  end;
+  DeleteFile(L);
+  if Ok then Log('elevated scheduled task "Stream Clipper" created');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

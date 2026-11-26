@@ -51,6 +51,7 @@ jobs:
         run: |
           $p = Start-Process "dist\StreamClipper-Setup.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/MERGETASKS=!model,!browser,!desktopicon','/LOG=install.log' -Wait -PassThru
           if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 80; throw "installer exit code $($p.ExitCode)" }
+          Select-String -Path install.log -Pattern "schtasks|scheduled task|Register-ScheduledTask" | ForEach-Object { $_.Line }
           schtasks /query /tn "Stream Clipper" /xml | Select-String "HighestAvailable","Stream Clipper.exe"
           if ($LASTEXITCODE -ne 0) { Get-Content install.log -Tail 80; throw "elevated task missing" }
           $app = "$env:LOCALAPPDATA\Programs\Stream Clipper"
