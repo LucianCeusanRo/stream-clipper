@@ -21,13 +21,16 @@ def _profile(acc=None):
     return profile_dir(acc)
 
 
-def _ctx(p, headless=None, acc=None):
+def _ctx(p, headless=None, acc=None, visible=False):
+    """visible=True only for the login window. Background work (uploads, checks) opens the browser OFF-SCREEN so it
+    never pops up over a game; it is still a normal (non-headless) browser, which TikTok accepts."""
     c = cfg()
     prof = _profile(acc)
     prof.mkdir(parents=True, exist_ok=True)
     args = dict(user_data_dir=str(prof), headless=c.get("headless", False) if headless is None else headless,
                 viewport={"width": 1280, "height": 900}, locale="ro-RO" if c.get("ui_language") == "ro" else "en-US",
-                args=["--disable-blink-features=AutomationControlled"])
+                args=["--disable-blink-features=AutomationControlled"] +
+                     ([] if visible else ["--window-position=-32000,-32000", "--window-size=1280,900"]))
     ch = c.get("browser_channel", "chrome")
     if ch and ch != "chromium":
         args["channel"] = ch
@@ -50,7 +53,7 @@ def login(timeout=600, acc=None):
     (max 10 min) and keep it in the persistent profile. No password is stored by this program."""
     from playwright.sync_api import sync_playwright
     with _lock, sync_playwright() as p:
-        ctx = _ctx(p, headless=False, acc=acc)
+        ctx = _ctx(p, headless=False, acc=acc, visible=True)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto("https://www.tiktok.com/login")
         LOGIN_STATE["state"] = "astept sa te loghezi in fereastra Chrome"

@@ -180,7 +180,7 @@ pre{background:#07090c;color:#d1d5db;border:1px solid var(--line);border-radius:
 <div id="statusbar"><span><i class="dot" id="sdLive"></i><span id="sLive">…</span></span><span id="sWatch"></span><span id="sWork"></span><span id="sPost"></span><span class="sp"></span><span id="sToday"></span></div>
 <div class="toasts" id="toasts"></div>
 
-<div class="ov" id="mvOv" onclick="if(event.target===this)closeDlg()"><video id="mv" controls autoplay playsinline></video></div>
+<div class="ov" id="mvOv" onclick="if(event.target===this)closeDlg()"><div style="display:flex;flex-direction:column;align-items:center;gap:10px"><video id="mv" controls autoplay playsinline></video><button class="pri" onclick="setCover()" data-tip="Pause on the best frame, then click: it becomes the clip's cover (gallery, exports for YouTube/Facebook)">🖼 Use this frame as cover</button></div></div>
 <div class="ov" id="cfOv"><div class="dlg"><div class="dh"><span id="cfIc" style="font-size:22px">⚠️</span><h3 id="cfT"></h3></div><div class="db"><div id="cfB"></div><div id="cfC"></div></div>
   <div class="df"><button onclick="cfDone(false)">Anulează</button><button id="cfOk" class="pri" onclick="cfDone(true)">OK</button></div></div></div>
 <div class="ov" id="genOv"><div class="dlg wide"><div class="dh"><span style="font-size:22px">✂️</span><h3>Clipuri noi dintr-un link sau fișier</h3></div><div class="db">
@@ -426,7 +426,9 @@ function postClip(id){const en=ACC.filter(a=>a.enabled);if(en.length<2){act(id,'
 async function postGo(){const mode=($('input[name=pmode]:checked')||{}).value;const accs=mode==='pick'?$$('.pacc:checked').map(x=>x.value):[];
   if(mode==='pick'&&!accs.length){toast('Alege cel puțin un cont',true);return}
   closeDlg();await act(POSTID,'post',{accounts:accs});toast(accs.length>1?`Pus în coadă pentru ${accs.length} conturi ✔`:'Adăugat în coadă ✔')}
-function play(id){$('#mv').src='/media/'+id+'/video';dlg('mvOv')}
+let PLAYID=null;
+function play(id){PLAYID=id;$('#mv').src='/media/'+id+'/video';dlg('mvOv')}
+async function setCover(){const v=$('#mv');if(!PLAYID)return;v.pause();await api('/api/clip',{id:PLAYID,action:'set_cover',t:v.currentTime});toast('Cover set ✔ ('+v.currentTime.toFixed(1)+' s)');render()}
 /* ---------- Queue / Posted ---------- */
 async function listPage(v,kind){
   if(kind==='queue'){const list=await api(`/api/clips?status=queue&sort=plan&min_viral=0&style=`);

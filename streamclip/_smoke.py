@@ -108,7 +108,8 @@ def main(real_whisper=False):
         check((v.get("width"), v.get("height")) == (1080, 1920) and round(fps) in (30, 60) and 10 <= dur <= 60 and a,
               f"clip #{c['id']}: {v.get('width')}x{v.get('height')} {fps:.0f} fps {dur:.1f} s audio={a}")
         thumb = c["thumb"] if "thumb" in c.keys() else None
-        check(bool(thumb) and os.path.exists(thumb), f"clip #{c['id']} has a cover/thumbnail")
+        check(bool(thumb) and os.path.exists(thumb) and os.path.exists(str(c["file"])[:-4] + ".cover.jpg"),
+              f"clip #{c['id']} has a cover (auto: payoff moment) + gallery thumbnail")
         check("GTA" not in (c["caption"] or "") + (c["hook"] or ""), f"clip #{c['id']} caption has no made-up game")
 
     print("channels + rotation (mocked):")
@@ -147,6 +148,7 @@ def main(real_whisper=False):
              ("/api/job", {"source": "", "clips": 1}, 400)]
     if cid:
         posts += [("/api/clip", {"id": cid, "action": "set_game", "game": "The Finals"}, 200),
+                  ("/api/clip", {"id": cid, "action": "set_cover", "t": 4.2}, 200),
                   ("/api/clip", {"id": cid, "action": "post"}, 200)]
     for path, body, want in posts:
         code = http(port, path, body)

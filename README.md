@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/banner.png" alt="Stream Clipper: GTA 6 streams in, Shorts and TikToks out" width="100%"></p>
 
 <h1 align="center"><a href="https://github.com/LucianCeusanRo/stream-clipper/releases/latest/download/StreamClipper-Setup.exe">⬇️ Download for Windows</a></h1>
-<p align="center"><b>Installer: Next → Next → Install.</b> Free, no admin needed. <a href="https://github.com/LucianCeusanRo/stream-clipper/releases/latest">All downloads</a> · Windows 10/11 · unsigned, so SmartScreen may ask: <i>More info → Run anyway</i>.</p>
+<p align="center"><b>Installer: Next → Next → Install.</b> Free. Windows asks for administrator once (UAC) during install; after that the app starts with admin rights without any prompt. <a href="https://github.com/LucianCeusanRo/stream-clipper/releases/latest">All downloads</a> · Windows 10/11 · unsigned, so SmartScreen may ask: <i>More info → Run anyway</i>.</p>
 
 <p align="center">
 <a href="https://github.com/LucianCeusanRo/stream-clipper/actions/workflows/ci.yml"><img src="https://github.com/LucianCeusanRo/stream-clipper/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -67,14 +67,16 @@ Clips are someone else's work. Please:
 ## Features
 
 - 🔴 **Live watching**: checks a channel every minute, records new lives *from the beginning* (DVR), fills gaps after disconnects, and keeps cutting clips while the stream runs.
+- 📡 **Kick & Twitch channels on autopilot**: add channels under **Channels**; each one is checked every 90 s (also from the tray), recorded when it goes live, stopped when the live ends and turned into clips. Offline channels idle quietly; errors and rate limits back off.
 - 🔗 **Any link or file**: YouTube live/VOD, Twitch, Kick, TikTok live replays (anything yt-dlp supports) or a local `.mp4`, with an optional from/to range.
-- 🗣️ **Whisper transcription**: faster-whisper `large-v3` with word timestamps; set the language (`en`, `ro`, `es`, …) or `auto`. Extra clean-up for Romanian (diacritics).
+- 🗣️ **Whisper transcription**: faster-whisper with word timestamps (`small` int8 by default, `large-v3-turbo` on an NVIDIA GPU, low-memory mode for weaker PCs); set the language (`en`, `ro`, `es`, …) or `auto`. Extra clean-up for Romanian (diacritics).
 - 🎯 **Moment detection**: loudness spikes, screams, laughter rhythm, keywords in English and Romanian (plus your own `extra_keywords`), live chat activity. Optional LLM judge with any OpenAI-compatible API or a free local Ollama model.
 - 🧑‍💻 **Smart layout**: face detection finds the webcam: cam on top + game below; no webcam → whole frame over a blurred background.
 - 💬 **Captions that pop**: 1–3 word groups, the current word highlighted, keyword colours, a hook line only when the streamer really shouted something (their own words, never a game name), 6 bundled fonts.
 - ✨ **Effects** (each can be turned off): emoji pop-ups, punch-in zoom on peaks, light shake on rage, original sound effects, loudness normalised to −14 LUFS.
 - ✂️ **Review and edit**: viral-chance estimate with the reasons, editable title/description, "New text" button, re-cut ±1 s snapped to sentence edges.
-- 📤 **Optional TikTok posting**: through the TikTok Studio website with your own login, gaps between posts and a daily cap.
+- 📤 **Optional posting, off by default**: TikTok (TikTok Studio website, your own login), YouTube Shorts (official API) and Facebook Reels (export only). Nothing posts unless you press Post or turn on Auto-post. **Rotate** spreads queued clips over your accounts in turn, with each account's daily cap and minutes between posts, never the same clip twice on one account; the planned schedule is shown in **Queue**.
+- 🖼️ **Cover frames**: the cover is the payoff moment by default; pick any other frame in the player.
 - 💾 **Crash-safe**: state in SQLite, so after a restart or power cut nothing is cut or posted twice.
 - 🌍 **English or Romanian dashboard** (`ui_language`).
 
@@ -103,10 +105,18 @@ flowchart LR
     G -->|you press Post| H[TikTok upload<br>optional]
 ```
 
+## Quick start for testers
+
+1. **[Download `StreamClipper-Setup.exe`](https://github.com/LucianCeusanRo/stream-clipper/releases/latest/download/StreamClipper-Setup.exe)**, run it, say **Yes** to the admin prompt, then **Next → Next → Install** (15–20 min the first time).
+2. Open **Stream Clipper** from the Start menu or desktop.
+3. Go to **Channels**, paste a Kick channel, e.g. `kick.com/tallsilvr`, press **Add channel**. When the streamer goes live it records by itself.
+4. Or test right away: paste a Kick video link (e.g. `https://kick.com/tallsilvr/videos/…`) at the top of **Home**, choose 3 clips, press **Generate**.
+5. Open **Clips**, watch them, pick a cover (🖼 in the player) and press **📤 Post** only on the ones you like. Auto-post stays OFF unless you turn it on.
+
 ## Quick start
 
 1. **[Download the installer](https://github.com/LucianCeusanRo/stream-clipper/releases/latest/download/StreamClipper-Setup.exe)** (`StreamClipper-Setup.exe`) and run it: **Next → Next → Install**.
-2. It sets up Python 3.12 (only if missing), ffmpeg, Deno, the packages and the Whisper model (15–20 minutes the first time, no admin rights) and adds a **Stream Clipper** shortcut. Updates install themselves at every start.
+2. It sets up Python 3.12 (only if missing), ffmpeg, Deno, the packages and the Whisper model (15–20 minutes the first time) and adds a **Stream Clipper** shortcut. It runs as administrator (some PCs block parts of the setup otherwise, e.g. long file paths) and registers a "Stream Clipper" scheduled task with highest privileges, so the shortcut starts the app elevated **without a UAC prompt over your game**. Put an empty `no-admin.txt` next to `Stream Clipper.exe` to run without admin. Updates install themselves at every start.
    *Prefer manual?* Take the source ZIP from the [release](https://github.com/LucianCeusanRo/stream-clipper/releases/latest), unzip it and double-click `setup.bat`.
 3. **Open Stream Clipper**, go to **⚙️ Settings**, set the speech language, channel (optional), streamer name, credit text and hashtags. The game is detected from the stream (Twitch / Kick / YouTube category) and used in titles and hashtags only; captions on the video are just the words the streamer says, and press **Save**.
 
@@ -155,20 +165,23 @@ Everything is in `config.yaml` (created from [`config.example.yaml`](config.exam
 | `streamer_name` / `game` | empty / empty | Used in titles. `game` is only a fallback: the real game is detected from the stream (Twitch / Kick / YouTube category, official name via Steam) and goes into titles and hashtags only (e.g. `#CS2`); unknown = `#gaming #clips`. You can also set it per clip. |
 | `credit_text` | empty | Burned into every clip, e.g. `@channel on YouTube` |
 | `required_hashtag` | empty | Campaign hashtag, always first when set |
-| `hashtags` / `extra_hashtags` / `hashtags_max` | `#gta6` / popular tags / 5 | Fixed + randomly picked hashtags |
+| `hashtags` / `extra_hashtags` / `hashtags_max` | empty / `#gaming #clips #streamer` / 5 | Fixed + randomly picked hashtags (the game's own tag, e.g. `#TheFinals`, is added automatically) |
 | `extra_keywords` | `[]` | Your own words that mark a good moment |
-| `whisper_model` | `large-v3` | `medium` / `small` for weaker PCs or CPU |
-| `clip_min_sec` / `clip_max_sec` | 20 / 60 | Clip length range |
+| `whisper_model` / `whisper_compute_type` | `auto` / `auto` | auto = `small` int8 (`base` under 8 GB RAM in low mode); `large-v3-turbo` int8_float16 on an NVIDIA GPU |
+| `memory_mode` / `ram_cap_gb` / `model_idle_unload_minutes` | `auto` / 0 / 10 | Low-memory mode (auto under 12 GB RAM), optional RAM cap, free the speech model when idle |
+| `channel_check_every_sec` | 90 | How often each Kick/Twitch channel under **Channels** is checked |
+| `clip_min_sec` / `clip_max_sec` | 15 / 45 | Clip length range |
 | `min_score` / `clips_per_chunk_max` | 0.9 / 3 | Lower threshold = more clips |
 | `layout` | `split` | `split` (cam + game), `blur`, `fill` |
 | `auto_post` | `false` | `true` posts the best clips by itself (only for creators who allow it) |
-| `daily_post_cap` / post intervals | 30 / 30–45 min | Posting pace |
+| `daily_post_cap` / post intervals | 45 / 20–30 min | Global posting pace (each account also has its own cap and gap) |
+| `rotate` / `rotate_accounts` | `true` / all | Clips without a chosen account take turns over your accounts |
 | `live_title_filter` | empty | Regex: only clip lives whose title matches |
 
 ## Requirements
 
 - **Windows 10/11** for the desktop app and installer.
-- **NVIDIA GPU with ~6 GB+ VRAM** recommended for `large-v3` (I use an RTX 4060 Ti). Without a GPU it runs on the CPU: use `small` or `medium`, and expect it to be much slower than real time.
+- **8 GB RAM** is enough in low-memory mode (measured peak ~0.7 GB with `base`, ~1.5 GB with `small`; ~0.2 GB when idle). An NVIDIA GPU makes it much faster; without one it runs on the CPU (about 3–4× faster than real time on a modern 8-thread CPU with `small`).
 - **~10 GB free disk** (Whisper model ~3 GB, recordings, clips) and internet for downloads.
 
 ## FAQ

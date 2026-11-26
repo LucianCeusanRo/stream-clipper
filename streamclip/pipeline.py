@@ -95,6 +95,25 @@ def series_day(v, s_abs, c):
     return int((v["start_ts"] + s_abs - t0) // 86400) + 1
 
 
+def make_cover(clip_mp4, t):
+    """Cover frame at t seconds: <clip>.jpg (360 px, gallery) + <clip>.cover.jpg (1080x1920, for platforms/exports
+    that take a custom cover). Returns the small one's path or None."""
+    out = Path(clip_mp4)
+    try:
+        dur = ffprobe_duration(out) or 0
+    except Exception:
+        dur = 0
+    t = max(0.3, min(float(t or 1.5), dur - 0.3)) if dur > 1 else 0.0
+    thumb, cover = out.with_suffix(".jpg"), out.with_suffix(".cover.jpg")
+    try:
+        run([tool("ffmpeg"), "-y", "-v", "error", "-ss", f"{t:.2f}", "-i", out, "-frames:v", "1", "-q:v", "3", cover])
+        run([tool("ffmpeg"), "-y", "-v", "error", "-i", cover, "-vf", "scale=360:-2", thumb])
+        return thumb
+    except Exception as e:
+        log.debug("cover %s: %s", out.name, e)
+        return None
+
+
 def process_chunk(chunk, overrides=None):
     """overrides: settings for this call only (manual jobs: more clips per chunk, lower threshold)."""
     c = dict(cfg(), **(overrides or {}))
@@ -150,11 +169,7 @@ def process_chunk(chunk, overrides=None):
             render.render(src, cand["start"], cand["end"], wrel, hook, out, lay, box, extra=extra)
             log.info("  CLIP %s [%s] (%.0fs, scor %.1f, %s) randat in %.0fs -> %s", hms(s_abs), lay, cand["end"] - cand["start"],
                      score, ", ".join(cand["why"]), time.time() - t, out.name)
-            thumb = out.with_suffix(".jpg")
-            try:
-                run([tool("ffmpeg"), "-y", "-v", "error", "-ss", "1.5", "-i", out, "-frames:v", "1", "-vf", "scale=360:-2", thumb])
-            except Exception:
-                thumb = None
+            thumb = make_cover(out, peak_rel)       # cover = the payoff moment (captions on screen), not a random frame
             status = "pending"          # waits for your review in the app (or auto-post, if ON)
             feat = cand.get("feat") or {}
             vpct, vfac = viral.compute(feat, cand["end"] - cand["start"], hook.startswith(("„", "\u201c")), cat,
@@ -275,7 +290,7 @@ def _clip_files(r):
         if f:
             out.append(Path(f))
     if r["file"]:
-        for ext in (".json", ".ass", ".fx.json"):
+        for ext in (".json", ".ass", ".fx.json", ".cover.jpg"):
             out.append(Path(r["file"]).with_suffix(ext))
     return out
 
@@ -432,11 +447,7 @@ def recut(cid, dstart=0.0, dend=0.0, snap=True):
     stem = re.sub(r"_v\d+$", "", Path(r["file"]).stem)
     out = Path(r["file"]).with_name(f"{stem}_v{ver}.mp4")
     render.render(r["src"], ns, ne, words, _spoken_hook(r["hook"]), out, m.get("layout") or r["layout"], m.get("cam_box"))
-    thumb = out.with_suffix(".jpg")
-    try:
-        run([tool("ffmpeg"), "-y", "-v", "error", "-ss", "1.5", "-i", out, "-frames:v", "1", "-vf", "scale=360:-2", thumb])
-    except Exception:
-        thumb = None
+    thumb = make_cover(out, r["cover_t"] if "cover_t" in r.keys() and r["cover_t"] is not None else 1.5)
     feat = m.get("feat") or {}
     vpct, vfac = viral.compute(feat, ne - ns, (r["hook"] or "").startswith(("„", "\u201c")), r["cat"] or m.get("cat") or "_",
                                sum(1 for w in words if w["s"] < 2), m.get("llm")) if feat else (r["viral"], m.get("factors"))

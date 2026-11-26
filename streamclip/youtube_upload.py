@@ -112,6 +112,9 @@ def export(acc, video: Path, caption: str):
     shutil.copyfile(video, dst)
     title, desc = split_caption(caption)
     dst.with_suffix(".txt").write_text(f"TITLE:\n{title}\n\nDESCRIPTION:\n{desc}\n", encoding="utf-8")
+    cover = video.with_suffix(".cover.jpg")
+    if cover.exists():                                   # the cover you picked (or the auto one) for the manual upload
+        shutil.copyfile(cover, dst.with_suffix(".cover.jpg"))
     return str(dst)
 
 

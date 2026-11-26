@@ -345,6 +345,15 @@ class H(BaseHTTPRequestHandler):
                          (time.time(), targets[0] if targets else (r["account"] if r["status"] != "posted" else None), cid))
                     for t in targets[1:]:                        # same clip to more accounts -> one queued copy each
                         db.clone_clip(cid, t)
+                elif a == "set_cover":                           # cover frame picked in the player (seconds into the clip)
+                    try:
+                        t = max(0.0, float(b.get("t") or 0))
+                    except (TypeError, ValueError):
+                        return self._json({"error": "t: seconds"}, 400)
+                    th = pipeline.make_cover(r["file"], t)
+                    if not th:
+                        return self._json({"error": "could not grab that frame"}, 500)
+                    db.x("UPDATE clips SET thumb=?, cover_t=? WHERE id=?", (str(th), t, cid))
                 elif a == "set_account":
                     acc = b.get("account") or None
                     if acc and not accounts.get(acc):

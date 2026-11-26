@@ -229,7 +229,7 @@ def _run(j):
     # keep only the best N (by viral chance) -> the rest are removed from the gallery
     rows = db.q("SELECT * FROM clips WHERE video_id=? AND status='pending' ORDER BY COALESCE(viral,0) DESC, score DESC", (vid,))
     for r in rows[j["clips"]:]:
-        for ext in (".mp4", ".jpg", ".json", ".ass", ".fx.json"):
+        for ext in (".mp4", ".jpg", ".json", ".ass", ".fx.json", ".cover.jpg"):
             Path(r["file"]).with_suffix(ext).unlink(missing_ok=True)
         if r["src"]:
             Path(r["src"]).unlink(missing_ok=True)
