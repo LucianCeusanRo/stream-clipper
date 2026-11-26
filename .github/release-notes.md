@@ -2,6 +2,7 @@
 
 - **New: classic Windows installer** (`StreamClipper-Setup-v1.3.0.exe`): Next → options → Install, no admin needed.
 - **Fixed: in-app updates.** Releases now ship `StreamClipper-update-v1.3.0.zip` + `SHA256SUMS.txt`, so the Update button and the check on every launch can find new versions (before, releases had no update files).
+- **Fixed: Settings → Performance failed to load** on PCs where ffmpeg was not installed yet (a missing tool stopped the request instead of showing an error).
 - Multiple TikTok / YouTube Shorts accounts, desktop UI with menu bar, General settings (CPU/GPU auto-detect, per-section reset).
 - GTA 6 texts in the window title, splash, README and website.
 
