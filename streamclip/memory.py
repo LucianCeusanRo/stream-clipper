@@ -20,7 +20,8 @@ def total_gb():
             _total = psutil.virtual_memory().total / 2 ** 30
         except Exception:
             try:
-                _total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2 ** 30
+                _total = _win_total() if os.name == "nt" else \
+                    os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2 ** 30
             except (ValueError, OSError, AttributeError):
                 _total = 16.0
     return _total
@@ -33,10 +34,43 @@ def rss_gb():
         return psutil.Process().memory_info().rss / 2 ** 30
     except Exception:
         try:
+            if os.name == "nt":
+                return _win_rss()
             with open("/proc/self/statm") as f:
                 return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 2 ** 30
         except Exception:
             return 0.0
+
+
+def _win_total():
+    """Physical RAM on Windows without psutil (GlobalMemoryStatusEx)."""
+    import ctypes
+
+    class MS(ctypes.Structure):
+        _fields_ = [("len", ctypes.c_ulong), ("load", ctypes.c_ulong)] + \
+                   [(n, ctypes.c_ulonglong) for n in ("tot", "av", "tp", "ap", "tv", "avv", "ave")]
+    m = MS(); m.len = ctypes.sizeof(MS)
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
+        raise OSError("GlobalMemoryStatusEx failed")
+    return m.tot / 2 ** 30
+
+
+def _win_rss():
+    """Working set of this process on Windows without psutil."""
+    import ctypes
+    from ctypes import wintypes
+
+    class PMC(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD), ("faults", wintypes.DWORD)] + \
+                   [(n, ctypes.c_size_t) for n in ("peak_ws", "ws", "qpp", "qp", "qnpp", "qnp", "pf", "peak_pf")]
+    c = PMC(); c.cb = ctypes.sizeof(PMC)
+    k = ctypes.windll.kernel32
+    k.GetCurrentProcess.restype = wintypes.HANDLE
+    psapi = ctypes.windll.psapi
+    psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD]
+    if not psapi.GetProcessMemoryInfo(k.GetCurrentProcess(), ctypes.byref(c), c.cb):
+        raise OSError("GetProcessMemoryInfo failed")
+    return c.ws / 2 ** 30
 
 
 def low():

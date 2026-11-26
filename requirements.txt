@@ -10,3 +10,4 @@ nvidia-cudnn-cu12>=9,<10; sys_platform == "win32"
 pywebview>=5.0; sys_platform == "win32"
 pystray>=0.19; sys_platform == "win32"     # optional: "minimize to tray"
 Pillow>=10; sys_platform == "win32"
+psutil>=5.9                                 # RAM readings for low-memory mode / RAM cap

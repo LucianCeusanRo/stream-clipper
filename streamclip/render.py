@@ -242,7 +242,11 @@ def effects_graph(base, p, fx, ass, layout, n_inputs_before=1):
             y = f"{yb}-60*exp(-(t-{a})*9)*cos((t-{a})*18)"
             g.append(f"{cur}[em{i}]overlay=x={side}:y='{y}':enable='between(t,{a},{b})'[ve{i}]"); cur = f"[ve{i}]"
     if fx.get("progress_bar"):
-        g.append(f"{cur}drawbox=x=0:y={H - 12}:w='iw*t/{p['dur']:.2f}':h=12:color=0xFE2C55@0.95:t=fill[vp]"); cur = "[vp]"
+        # a bar that slides in from the left (overlay re-evaluates x every frame; drawbox w=t
+        # is not animated and ffmpeg 8+ rejects its zero width at t=0)
+        d = p['dur']
+        g.append(f"color=c=0xFE2C55@0.95:s={W}x12:r=30:d={d + 1:.2f},format=rgba[pbar]")
+        g.append(f"{cur}[pbar]overlay=x='-w+w*min(t/{d:.2f},1)':y={H - 12}:shortest=1[vp]"); cur = "[vp]"
     g.append(subs_tail(cur, ass, pre=""))
     return ";".join(g), extra
 
